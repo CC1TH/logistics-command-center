@@ -25,8 +25,8 @@ export default function LoginPage() {
 
       if (error) throw error
 
-      // Login สำเร็จ -> ไปหน้า Admin
-      router.push('/admin/vehicles')
+      // ✅ เปลี่ยนตรงนี้: ให้เด้งไปหน้า Dashboard (Monitor View)
+      router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.')
     } finally {
