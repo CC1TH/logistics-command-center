@@ -67,13 +67,18 @@ export default function UsersPage() {
     e.preventDefault()
     
     try {
-      const { error } = await supabase.auth.admin.createUser({
-        email: formData.email,
-        password: formData.password,
-        email_confirm: true,
+      // เรียก API Route แทน
+      const response = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
       })
 
-      if (error) throw error
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'สร้างผู้ใช้งานไม่สำเร็จ')
+      }
       
       alert('สร้างผู้ใช้งานสำเร็จ')
       resetForm()
@@ -93,9 +98,18 @@ export default function UsersPage() {
     if (!confirm(`ต้องการลบผู้ใช้งาน ${userEmail} ใช่หรือไม่?`)) return
 
     try {
-      const { error } = await supabase.auth.admin.deleteUser(userId)
+      // เรียก API Route แทน
+      const response = await fetch('/api/delete-user', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
 
-      if (error) throw error
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'ลบผู้ใช้งานไม่สำเร็จ')
+      }
       
       alert('ลบผู้ใช้งานสำเร็จ')
       fetchUsers()
