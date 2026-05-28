@@ -37,25 +37,14 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const { data: authUsers, error: authError } = await supabase
-        .from('auth.users')
-        .select('id, email, created_at')
-        .order('created_at', { ascending: false })
+      const response = await fetch('/api/users')
+      const data = await response.json()
 
-      if (authError) throw authError
+      if (!response.ok) {
+        throw new Error(data.error || 'ไม่สามารถดึงข้อมูลผู้ใช้ได้')
+      }
 
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('user_id, role')
-
-      if (rolesError) throw rolesError
-
-      const usersWithRoles = authUsers?.map(user => ({
-        ...user,
-        role: roles?.find(r => r.user_id === user.id)?.role || 'user'
-      })) || []
-
-      setUsers(usersWithRoles)
+      setUsers(data.users || [])
     } catch (error) {
       console.error('Error fetching users:', error)
     } finally {
@@ -67,7 +56,6 @@ export default function UsersPage() {
     e.preventDefault()
     
     try {
-      // เรียก API Route แทน
       const response = await fetch('/api/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -98,7 +86,6 @@ export default function UsersPage() {
     if (!confirm(`ต้องการลบผู้ใช้งาน ${userEmail} ใช่หรือไม่?`)) return
 
     try {
-      // เรียก API Route แทน
       const response = await fetch('/api/delete-user', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
