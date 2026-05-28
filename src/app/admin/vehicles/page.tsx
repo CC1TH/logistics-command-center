@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 interface Vehicle {
   id: string
@@ -25,7 +26,6 @@ export default function VehiclesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   
-  // Form state
   const [formData, setFormData] = useState({
     license_plate: '',
     company_name: '',
@@ -130,7 +130,6 @@ export default function VehiclesPage() {
     router.push('/login')
   }
 
-  // กรองข้อมูลตามคำค้นหา
   const filteredVehicles = vehicles.filter(vehicle => {
     const search = searchTerm.toLowerCase()
     return (
@@ -145,9 +144,18 @@ export default function VehiclesPage() {
       {/* Header */}
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">
-            ระบบจัดการข้อมูลรถขนส่ง
-          </h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-gray-900">
+              ระบบจัดการข้อมูลรถขนส่ง
+            </h1>
+            {/* ✅ เพิ่มลิงก์นี้ */}
+            <Link 
+              href="/admin/users" 
+              className="text-sm text-blue-600 hover:text-blue-800 border-l border-gray-300 pl-4"
+            >
+              จัดการผู้ใช้งาน
+            </Link>
+          </div>
           <button
             onClick={handleLogout}
             className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
