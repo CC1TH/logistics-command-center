@@ -23,6 +23,7 @@ export default function VehiclesPage() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
   
   // Form state
   const [formData, setFormData] = useState({
@@ -59,7 +60,6 @@ export default function VehiclesPage() {
     
     try {
       if (editingId) {
-        // Update existing
         const { error } = await supabase
           .from('vehicles')
           .update(formData)
@@ -67,7 +67,6 @@ export default function VehiclesPage() {
         
         if (error) throw error
       } else {
-        // Create new
         const { error } = await supabase
           .from('vehicles')
           .insert([formData])
@@ -75,7 +74,6 @@ export default function VehiclesPage() {
         if (error) throw error
       }
 
-      // Reset form and refresh
       resetForm()
       fetchVehicles()
     } catch (error) {
@@ -132,6 +130,16 @@ export default function VehiclesPage() {
     router.push('/login')
   }
 
+  // กรองข้อมูลตามคำค้นหา
+  const filteredVehicles = vehicles.filter(vehicle => {
+    const search = searchTerm.toLowerCase()
+    return (
+      vehicle.license_plate.toLowerCase().includes(search) ||
+      (vehicle.company_name && vehicle.company_name.toLowerCase().includes(search)) ||
+      (vehicle.gps_name && vehicle.gps_name.toLowerCase().includes(search))
+    )
+  })
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -150,6 +158,42 @@ export default function VehiclesPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* ช่องค้นหา */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <input
+              type="text"
+              placeholder="ค้นหาด้วยทะเบียนรถ, บริษัท, หรือชื่อ GPS..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <svg
+              className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* ปุ่มเพิ่มรถ */}
         <div className="mb-6">
           <button
@@ -288,14 +332,14 @@ export default function VehiclesPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {vehicles.length === 0 ? (
+                {filteredVehicles.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
-                      ยังไม่มีข้อมูลรถ
+                      {searchTerm ? `ไม่พบข้อมูลที่ตรงกับ "${searchTerm}"` : 'ยังไม่มีข้อมูลรถ'}
                     </td>
                   </tr>
                 ) : (
-                  vehicles.map((vehicle) => (
+                  filteredVehicles.map((vehicle) => (
                     <tr key={vehicle.id}>
                       <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
                         {vehicle.license_plate}
