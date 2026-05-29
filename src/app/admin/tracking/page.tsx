@@ -5,12 +5,11 @@ import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-// ✅ เพิ่ม gpsLink เข้าไปใน Interface
 interface TripBlock {
   id?: string
   licensePlate: string
   gpsName: string
-  gpsLink: string // เพิ่มมาเพื่อดึงลิงก์
+  gpsLink: string
   notes: string
   latLng: string
   deliveryAddress: string
@@ -47,7 +46,7 @@ export default function TrackingPage() {
         id: t.id,
         licensePlate: t.license_plate || '',
         gpsName: t.gps_name || '',
-        gpsLink: t.gps_link || '', // ✅ ดึงลิงก์มาเก็บไว้
+        gpsLink: t.gps_link || '',
         notes: t.notes || '',
         latLng: t.lat_lng || '',
         deliveryAddress: t.delivery_address || '',
@@ -84,13 +83,12 @@ export default function TrackingPage() {
     })
   }
 
-  // ✅ ฟังก์ชันดึงข้อมูลรถ เพิ่มการดึง gps_link เข้ามาด้วย
   const fetchVehicleData = async (index: number, plate: string) => {
     if (plate.length < 3) return
     try {
       const { data, error } = await supabase
         .from('vehicles')
-        .select('gps_name, gps_link, notes') // ✅ เพิ่ม gps_link
+        .select('gps_name, gps_link, notes')
         .eq('license_plate', plate)
         .single()
       
@@ -98,7 +96,7 @@ export default function TrackingPage() {
         setTrips(prev => {
           const newTrips = [...prev]
           newTrips[index].gpsName = data.gps_name || ''
-          newTrips[index].gpsLink = data.gps_link || '' // ✅ อัปเดต state ลิงก์
+          newTrips[index].gpsLink = data.gps_link || ''
           newTrips[index].notes = data.notes || ''
           return newTrips
         })
@@ -188,14 +186,13 @@ export default function TrackingPage() {
     setTrips(prev => prev.filter((_, i) => i !== index))
   }
 
-  // ✅ ลบเงื่อนไขบังคับกรอกข้อมูลออก (บันทึกได้ทันที)
   const saveBlock = async (index: number) => {
     const trip = trips[index]
 
     const payload = {
       license_plate: trip.licensePlate,
       gps_name: trip.gpsName,
-      gps_link: trip.gpsLink, // ✅ บันทึกลิงก์ด้วย
+      gps_link: trip.gpsLink,
       notes: trip.notes,
       lat_lng: trip.latLng,
       delivery_address: trip.deliveryAddress,
@@ -235,9 +232,6 @@ export default function TrackingPage() {
       }
       return arr
     })
-    
-    // ✅ ลบ Alert แจ้งเตือนออก เพื่อให้การใช้งานลื่นไหลขึ้น (หรือจะคงไว้ก็ได้)
-    // alert('บันทึกข้อมูลสำเร็จ') 
   }
 
   const handleLogout = async () => {
@@ -300,15 +294,15 @@ export default function TrackingPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">ข้อมูล GPS</label>
-                  {/* ✅ เปลี่ยนเป็นแสดงผลแบบลิงก์ถ้ามีลิงก์ */}
+                  {/* ✅ ส่วนแสดงผล GPS Link */}
                   {trip.gpsLink ? (
                     <a 
                       href={trip.gpsLink} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="block w-full p-2 border rounded bg-blue-50 text-blue-600 hover:bg-blue-100 underline truncate"
+                      className="block w-full p-2 border border-blue-300 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 underline truncate font-medium text-center"
                     >
-                      {trip.gpsName || 'เปิด GPS'}
+                      📍 {trip.gpsName || 'เปิด GPS'}
                     </a>
                   ) : (
                     <input value={trip.gpsName} disabled className="w-full p-2 border rounded bg-gray-50 text-gray-500" readOnly />
