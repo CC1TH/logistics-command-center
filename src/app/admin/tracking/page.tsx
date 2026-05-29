@@ -118,7 +118,6 @@ export default function TrackingPage() {
       const data = await res.json()
       const addr = data.address || {}
       
-      // ตัดเอาเฉพาะ District/County และ Province/State
       const district = addr.city || addr.town || addr.village || addr.county || addr.municipality || ''
       const province = addr.state || ''
       let location = ''
@@ -142,7 +141,7 @@ export default function TrackingPage() {
     if (isNaN(dist) || dist <= 0) return
 
     const etaRaw = dist / 58
-    const etaRounded = Math.round(etaRaw) // .5 ปัดขึ้น, <.5 ปัดลง ตาม Math.round มาตรฐาน
+    const etaRounded = Math.round(etaRaw)
     
     const now = new Date()
     const arrival = new Date(now.getTime() + etaRounded * 60 * 60 * 1000)
@@ -210,9 +209,14 @@ export default function TrackingPage() {
     }
 
     let error
+    let savedId = trip.id
+    
     if (trip.isNew) {
       const res = await supabase.from('trip_logs').insert([payload]).select()
       error = res.error
+      if (!error && res.data && res.data[0]) {
+        savedId = res.data[0].id
+      }
     } else {
       const res = await supabase.from('trip_logs').update(payload).eq('id', trip.id!).select()
       error = res.error
@@ -227,9 +231,12 @@ export default function TrackingPage() {
       const arr = [...prev]
       arr[index].isLocked = true
       arr[index].isNew = false
-      if (!arr[index].id) arr[index].id = (await supabase.from('trip_logs').select('id').eq('license_plate', trip.licensePlate).single()).data?.id
+      if (savedId && !arr[index].id) {
+        arr[index].id = savedId
+      }
       return arr
     })
+    
     alert('บันทึกข้อมูลสำเร็จ')
   }
 
@@ -284,17 +291,15 @@ export default function TrackingPage() {
               className="rounded-xl shadow-md border p-5 transition-all"
               style={{ backgroundColor: bgColor, borderColor }}
             >
-              {/* Header: Reorder + Delete */}
               <div className="flex justify-between items-center mb-4">
                 <div className="flex gap-2">
-                  <button onClick={() => moveBlock(idx, -1)} disabled={idx === 0} className="p-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-30">️</button>
+                  <button onClick={() => moveBlock(idx, -1)} disabled={idx === 0} className="p-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-30">⬆️</button>
                   <button onClick={() => moveBlock(idx, 1)} disabled={idx === trips.length - 1} className="p-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-30">⬇️</button>
                 </div>
-                <button onClick={() => deleteBlock(idx)} className="text-red-600 hover:text-red-800 p-2">️ ลบเที่ยวนี้</button>
+                <button onClick={() => deleteBlock(idx)} className="text-red-600 hover:text-red-800 p-2">🗑️ ลบเที่ยวนี้</button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                {/* Row 1: Plate, GPS, Notes */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">ทะเบียนรถ</label>
                   <input 
@@ -316,7 +321,6 @@ export default function TrackingPage() {
                 </div>
               </div>
 
-              {/* Row 2: Lat, Lng */}
               <div className="mb-4">
                 <label className="block text-xs font-medium text-gray-600 mb-1">Latitude, Longitude (เช่น 13.7563, 100.5018)</label>
                 <input 
@@ -329,7 +333,6 @@ export default function TrackingPage() {
                 />
               </div>
 
-              {/* Row 3: Delivery Address */}
               <div className="mb-4">
                 <label className="block text-xs font-medium text-gray-600 mb-1">Delivery Address</label>
                 <input 
@@ -340,7 +343,6 @@ export default function TrackingPage() {
                 />
               </div>
 
-              {/* Row 4: Location (Auto + Editable) */}
               <div className="mb-4">
                 <label className="block text-xs font-medium text-gray-600 mb-1">Location (Auto-detected District, Province)</label>
                 <input 
@@ -352,7 +354,6 @@ export default function TrackingPage() {
                 />
               </div>
 
-              {/* Row 5: Metrics */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 bg-white/50 p-3 rounded-lg">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Dist. To Dest (KM)</label>
@@ -381,7 +382,6 @@ export default function TrackingPage() {
                 </div>
               </div>
 
-              {/* Status & Actions */}
               <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-black/10">
                 <button onClick={() => toggleStatus(idx, 'ovn')} className={`px-4 py-1.5 rounded font-medium text-sm border ${trip.statusColor === 'ovn' ? 'bg-[#00FFFF] border-[#00cccc] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>OVN</button>
                 <button onClick={() => toggleStatus(idx, 'wait')} className={`px-4 py-1.5 rounded font-medium text-sm border ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>Wait</button>
