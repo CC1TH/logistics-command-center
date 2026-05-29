@@ -28,8 +28,6 @@ export default function TrackingPage() {
   const router = useRouter()
   const [trips, setTrips] = useState<TripBlock[]>([])
   const [loading, setLoading] = useState(true)
-  
-  // ✅ State สำหรับระบบรวมกลุ่ม
   const [isMergeMode, setIsMergeMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
@@ -51,8 +49,11 @@ export default function TrackingPage() {
     } catch (err) { console.error(err) } finally { setLoading(false) }
   }
 
+  // ✅ แก้ไข: สร้าง ID ชั่วคราวทันทีเมื่อกดเพิ่ม
   const addBlock = () => {
+    const tempId = `temp-${Date.now()}-${Math.random()}`
     setTrips(prev => [...prev, {
+      id: tempId, // ✅ มี ID ทันที ทำให้ Checkbox ทำงานได้
       groupName: '', licensePlate: '', gpsName: '', gpsLink: '', notes: '', latLng: '', deliveryAddress: '',
       locationName: '', distanceKm: '', eta: '', arrivalTime: '', updatedAt: '',
       statusColor: 'default', isNew: true
@@ -135,7 +136,6 @@ export default function TrackingPage() {
     calculateMetrics(index, trips[index].distanceKm)
   }
 
-  // ✅ Logic การเลือก (Checkbox)
   const toggleSelect = (id: string | undefined) => {
     if (!id) return
     setSelectedIds(prev => 
@@ -143,22 +143,16 @@ export default function TrackingPage() {
     )
   }
 
-  // ✅ Logic การรวมกลุ่ม
   const handleMerge = () => {
     if (!isMergeMode) {
-      // เริ่มโหมดเลือก
       setIsMergeMode(true)
       setSelectedIds([])
     } else {
-      // ยืนยันการรวม
       if (selectedIds.length < 2) {
         alert('กรุณาเลือกอย่างน้อย 2 คันเพื่อรวมกลุ่ม')
         return
       }
-      
-      // สร้างชื่อกลุ่มใหม่ (Job-XXXX)
       const newGroupName = `Job-${new Date().getTime().toString().slice(-5)}`
-      
       setTrips(prev => {
         const newTrips = [...prev]
         newTrips.forEach(trip => {
@@ -168,13 +162,11 @@ export default function TrackingPage() {
         })
         return newTrips
       })
-      
       setIsMergeMode(false)
       setSelectedIds([])
     }
   }
 
-  // ✅ จัดกลุ่มตาม groupName
   const groups = useMemo(() => {
     const tempGroups: Record<string, number[]> = {}
     trips.forEach((trip, index) => {
@@ -189,22 +181,17 @@ export default function TrackingPage() {
     }))
   }, [trips])
 
-  // ✅ ย้ายทั้งกลุ่ม
   const moveGroup = (groupIdx: number, dir: number) => {
     const newIdx = groupIdx + dir
     if (newIdx < 0 || newIdx >= groups.length) return
-
     setTrips(prev => {
       const arr = [...prev]
       const currentIndices = groups[groupIdx].indices
       const targetIndices = groups[newIdx].indices
-
       const currentItems = currentIndices.map(i => ({ index: i, item: arr[i] }))
       const targetItems = targetIndices.map(i => ({ index: i, item: arr[i] }))
-
       const allIndices = [...currentIndices, ...targetIndices].sort((a, b) => b - a)
       allIndices.forEach(i => arr.splice(i, 1))
-
       const insertAt = Math.min(...currentIndices, ...targetIndices)
       if (dir === -1) {
         const itemsToInsert = [...currentItems, ...targetItems].sort((a, b) => a.index - b.index).map(x => x.item)
@@ -220,7 +207,7 @@ export default function TrackingPage() {
   const deleteBlock = async (index: number) => {
     const trip = trips[index]
     if (!confirm('ต้องการลบข้อมูลนี้ใช่หรือไม่?')) return
-    if (trip.id) await supabase.from('trip_logs').delete().eq('id', trip.id)
+    if (trip.id && !trip.id.startsWith('temp-')) await supabase.from('trip_logs').delete().eq('id', trip.id)
     setTrips(prev => prev.filter((_, i) => i !== index))
   }
 
@@ -268,40 +255,23 @@ export default function TrackingPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-3 py-3 space-y-3">
-        {/* ✅ Toolbar ด้านบน */}
         <div className="flex justify-between items-center bg-white p-2 rounded shadow-sm border border-gray-200">
           <button onClick={addBlock} className="bg-blue-600 text-white text-sm px-4 py-1.5 rounded shadow-sm hover:bg-blue-700 font-medium flex items-center gap-1">
             <span>+</span> เพิ่ม
           </button>
-          
           <div className="flex items-center gap-2">
-             {isMergeMode && (
-               <span className="text-xs text-blue-600 animate-pulse font-medium">
-                 เลือกรถที่ต้องการรวม ({selectedIds.length})
-               </span>
-             )}
-            <button 
-              onClick={handleMerge} 
-              className={`text-sm px-4 py-1.5 rounded shadow-sm font-medium flex items-center gap-1 transition-colors ${
-                isMergeMode 
-                  ? 'bg-green-600 text-white hover:bg-green-700' 
-                  : 'bg-purple-600 text-white hover:bg-purple-700'
-              }`}
-            >
+             {isMergeMode && <span className="text-xs text-blue-600 animate-pulse font-medium">เลือกรถ ({selectedIds.length})</span>}
+            <button onClick={handleMerge} className={`text-sm px-4 py-1.5 rounded shadow-sm font-medium flex items-center gap-1 transition-colors ${isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
               {isMergeMode ? '✅ ยืนยันการรวม' : '📦 รวมกลุ่ม'}
             </button>
           </div>
         </div>
 
-        {/* ✅ รายการบล็อก */}
         {groups.map((group, gIdx) => {
           const groupName = group.name
           const isStandalone = group.isStandalone
-
           return (
             <div key={groupName + gIdx} className={`rounded-lg border overflow-hidden transition-all ${isStandalone ? 'border-gray-300 bg-white' : 'border-blue-400 bg-blue-50/20'}`}>
-              
-              {/* หัวกลุ่ม (แสดงเฉพาะกรณีที่มีกลุ่ม) */}
               {!isStandalone && (
                 <div className="bg-blue-100 px-3 py-1.5 flex justify-between items-center border-b border-blue-200">
                   <div className="flex items-center gap-2">
@@ -309,31 +279,26 @@ export default function TrackingPage() {
                     <span className="text-[10px] bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">{group.indices.length} คัน</span>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => moveGroup(gIdx, -1)} disabled={gIdx === 0} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">⬆️</button>
-                    <button onClick={() => moveGroup(gIdx, 1)} disabled={gIdx === groups.length - 1} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">️</button>
+                    <button onClick={() => moveGroup(gIdx, -1)} disabled={gIdx === 0} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">️</button>
+                    <button onClick={() => moveGroup(gIdx, 1)} disabled={gIdx === groups.length - 1} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">⬇️</button>
                   </div>
                 </div>
               )}
-
-              {/* รายการในกลุ่ม */}
               <div className={`${!isStandalone ? 'divide-y divide-blue-100' : ''}`}>
                 {group.indices.map((idx) => {
                   const trip = trips[idx]
                   const bgColor = trip.statusColor === 'ovn' ? '#00FFFF' : trip.statusColor === 'wait' ? '#FFFF00' : '#ffffff'
-                  
                   return (
                     <div key={trip.id || `temp-${idx}`} className="p-3 transition-colors relative" style={{ backgroundColor: bgColor }}>
-                      
-                      {/* ส่วนหัวของบล็อก (Checkbox + Delete) */}
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
-                          {/* ✅ Checkbox (แสดงเฉพาะตอนเป็นโหมดรวม) */}
+                          {/* ✅ Checkbox ที่แก้ไขแล้ว */}
                           {isMergeMode && (
                             <input 
                               type="checkbox" 
                               checked={!!trip.id && selectedIds.includes(trip.id)} 
                               onChange={() => toggleSelect(trip.id)}
-                              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
                             />
                           )}
                           <span className="text-[10px] text-gray-400">
@@ -342,8 +307,6 @@ export default function TrackingPage() {
                         </div>
                         <button onClick={() => deleteBlock(idx)} className="text-red-500 hover:text-red-700 text-xs">ลบ</button>
                       </div>
-
-                      {/* ช่องกรอกข้อมูล */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
                         <div>
                           <label className="block text-[10px] font-medium text-gray-600 mb-0.5">ทะเบียนรถ</label>
@@ -362,22 +325,18 @@ export default function TrackingPage() {
                           <input value={trip.notes} disabled className="w-full py-1 px-2 border rounded bg-gray-50 text-gray-400 text-sm" readOnly />
                         </div>
                       </div>
-
                       <div className="mb-2">
                         <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Latitude, Longitude</label>
                         <input value={trip.latLng} onChange={e => updateField(idx, 'latLng', e.target.value)} onBlur={() => fetchLocationFromCoords(idx, trip.latLng)} className="w-full py-1 px-2 border rounded bg-white font-mono text-sm" placeholder="13.7563, 100.5018" />
                       </div>
-
                       <div className="mb-2">
                         <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Delivery Address</label>
                         <input value={trip.deliveryAddress} onChange={e => updateField(idx, 'deliveryAddress', e.target.value)} className="w-full py-1 px-2 border rounded bg-white text-sm" />
                       </div>
-
                       <div className="mb-2">
                         <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Location (Auto-detected)</label>
                         <input value={trip.locationName} onChange={e => updateField(idx, 'locationName', e.target.value)} className="w-full py-1 px-2 border rounded bg-white text-sm font-medium" placeholder="Phanom Phrai, Roi Et" />
                       </div>
-
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2 bg-white/60 p-2 rounded">
                         <div>
                           <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Dist. To Dest (KM)</label>
@@ -396,7 +355,6 @@ export default function TrackingPage() {
                           <input value={trip.updatedAt} disabled className="w-full py-1 px-2 border rounded bg-gray-100 text-[10px]" readOnly />
                         </div>
                       </div>
-
                       <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-black/10">
                         <button onClick={() => setTrips(prev => { const a=[...prev]; a[idx].statusColor = a[idx].statusColor === 'ovn' ? 'default' : 'ovn'; return a })} className={`px-3 py-1 rounded text-xs border ${trip.statusColor === 'ovn' ? 'bg-[#00FFFF] border-[#00cccc] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>OVN</button>
                         <button onClick={() => setTrips(prev => { const a=[...prev]; a[idx].statusColor = a[idx].statusColor === 'wait' ? 'default' : 'wait'; return a })} className={`px-3 py-1 rounded text-xs border ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>Wait</button>
