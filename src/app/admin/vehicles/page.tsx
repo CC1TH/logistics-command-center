@@ -150,6 +150,12 @@ export default function VehiclesPage() {
             </h1>
             {/* ✅ เพิ่มลิงก์นี้ */}
             <Link 
+              href="/admin/tracking" 
+              className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 font-medium"
+            >
+              🚛 Trip Tracking
+            </Link>
+            <Link 
               href="/admin/users" 
               className="text-sm text-blue-600 hover:text-blue-800 border-l border-gray-300 pl-4"
             >
