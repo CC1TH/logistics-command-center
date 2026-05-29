@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 interface TripBlock {
   id?: string
+  groupName: string        // ✅ เพิ่มฟิลด์นี้
   licensePlate: string
   gpsName: string
   gpsLink: string
@@ -36,7 +37,7 @@ export default function TrackingPage() {
       const { data, error } = await supabase.from('trip_logs').select('*').order('sort_order', { ascending: true })
       if (error) throw error
       const mapped: TripBlock[] = (data || []).map((t: any) => ({
-        id: t.id, licensePlate: t.license_plate || '', gpsName: t.gps_name || '', gpsLink: t.gps_link || '',
+        id: t.id, groupName: t.group_name || '', licensePlate: t.license_plate || '', gpsName: t.gps_name || '', gpsLink: t.gps_link || '',
         notes: t.notes || '', latLng: t.lat_lng || '', deliveryAddress: t.delivery_address || '',
         locationName: t.location_name || '', distanceKm: String(t.distance_km || ''),
         eta: t.eta_hours ? String(t.eta_hours) : '', arrivalTime: t.arrival_time || '',
@@ -48,7 +49,7 @@ export default function TrackingPage() {
 
   const addBlock = () => {
     setTrips(prev => [...prev, {
-      licensePlate: '', gpsName: '', gpsLink: '', notes: '', latLng: '', deliveryAddress: '',
+      groupName: '', licensePlate: '', gpsName: '', gpsLink: '', notes: '', latLng: '', deliveryAddress: '',
       locationName: '', distanceKm: '', eta: '', arrivalTime: '', updatedAt: '',
       statusColor: 'default', isNew: true
     }])
@@ -130,10 +131,49 @@ export default function TrackingPage() {
     calculateMetrics(index, trips[index].distanceKm)
   }
 
-  const moveBlock = (index: number, dir: number) => {
-    const newIndex = index + dir
-    if (newIndex < 0 || newIndex >= trips.length) return
-    setTrips(prev => { const arr = [...prev]; [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]]; return arr })
+  // ✅ จัดกลุ่มตาม groupName ที่ผู้ใช้กำหนดเอง (Manual Grouping)
+  const groups = useMemo(() => {
+    const tempGroups: Record<string, number[]> = {}
+    trips.forEach((trip, index) => {
+      const key = trip.groupName.trim() || `standalone-${index}` // ถ้าไม่มีชื่อกลุ่ม = อยู่เดี่ยว
+      if (!tempGroups[key]) tempGroups[key] = []
+      tempGroups[key].push(index)
+    })
+    return Object.entries(tempGroups).map(([name, indices]) => ({ 
+      name: name.startsWith('standalone-') ? '' : name, 
+      indices,
+      isStandalone: name.startsWith('standalone-')
+    }))
+  }, [trips])
+
+  // ✅ ย้ายทั้งกลุ่ม
+  const moveGroup = (groupIdx: number, dir: number) => {
+    const newIdx = groupIdx + dir
+    if (newIdx < 0 || newIdx >= groups.length) return
+
+    setTrips(prev => {
+      const arr = [...prev]
+      const currentIndices = groups[groupIdx].indices
+      const targetIndices = groups[newIdx].indices
+
+      const currentItems = currentIndices.map(i => ({ index: i, item: arr[i] }))
+      const targetItems = targetIndices.map(i => ({ index: i, item: arr[i] }))
+
+      // ลบไอเทมเดิมออก (ไล่จากมากไปน้อย)
+      const allIndices = [...currentIndices, ...targetIndices].sort((a, b) => b - a)
+      allIndices.forEach(i => arr.splice(i, 1))
+
+      // แทรกกลับเข้าไป
+      const insertAt = Math.min(...currentIndices, ...targetIndices)
+      if (dir === -1) { // ย้ายขึ้น
+        const itemsToInsert = [...currentItems, ...targetItems].sort((a, b) => a.index - b.index).map(x => x.item)
+        arr.splice(insertAt, 0, ...itemsToInsert)
+      } else { // ย้ายลง
+        const itemsToInsert = [...targetItems, ...currentItems].sort((a, b) => a.index - b.index).map(x => x.item)
+        arr.splice(insertAt, 0, ...itemsToInsert)
+      }
+      return arr
+    })
   }
 
   const deleteBlock = async (index: number) => {
@@ -146,10 +186,12 @@ export default function TrackingPage() {
   const saveBlock = async (index: number) => {
     const trip = trips[index]
     const payload = {
+      group_name: trip.groupName,
       license_plate: trip.licensePlate, gps_name: trip.gpsName, gps_link: trip.gpsLink, notes: trip.notes,
       lat_lng: trip.latLng, delivery_address: trip.deliveryAddress, location_name: trip.locationName,
       distance_km: parseFloat(trip.distanceKm) || null, eta_hours: parseFloat(trip.eta) || null,
-      arrival_time: trip.arrivalTime, updated_at: trip.updatedAt, status_color: trip.statusColor, sort_order: index
+      arrival_time: trip.arrivalTime, updated_at: trip.updatedAt, status_color: trip.statusColor, 
+      sort_order: index
     }
     let error, savedId = trip.id
     if (trip.isNew) {
@@ -174,12 +216,11 @@ export default function TrackingPage() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header */}
       <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-3 py-2 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-gray-800">📧 Manual E-Mail</h1>
-            <Link href="/admin/vehicles" className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-200">🚗 จัดการข้อมูลรถ</Link>
+            <Link href="/admin/vehicles" className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-200"> จัดการข้อมูลรถ</Link>
             <Link href="/dashboard" className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded hover:bg-gray-200"> Monitor</Link>
           </div>
           <button onClick={handleLogout} className="bg-red-500 text-white text-xs px-3 py-1.5 rounded hover:bg-red-600">ออกจากระบบ</button>
@@ -187,83 +228,122 @@ export default function TrackingPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-3 py-3 space-y-3">
-        <button onClick={addBlock} className="bg-blue-600 text-white text-sm px-4 py-1.5 rounded shadow-sm hover:bg-blue-700 font-medium">
-          + เพิ่ม
-        </button>
+        <div className="flex justify-between items-center">
+          <button onClick={addBlock} className="bg-blue-600 text-white text-sm px-4 py-1.5 rounded shadow-sm hover:bg-blue-700 font-medium">
+            + เพิ่ม
+          </button>
+          <p className="text-[10px] text-gray-500 italic">💡 กรอก "รหัสงาน" เดียวกันเพื่อจัดกลุ่ม</p>
+        </div>
 
-        {trips.map((trip, idx) => {
-          const bgColor = trip.statusColor === 'ovn' ? '#00FFFF' : trip.statusColor === 'wait' ? '#FFFF00' : '#ffffff'
-          const borderColor = trip.statusColor === 'ovn' ? '#00cccc' : trip.statusColor === 'wait' ? '#cccc00' : '#e5e7eb'
+        {groups.map((group, gIdx) => {
+          const groupName = group.name
+          const isStandalone = group.isStandalone
 
           return (
-            <div key={idx} className="rounded-lg shadow-sm border p-3 transition-all" style={{ backgroundColor: bgColor, borderColor }}>
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex gap-1">
-                  <button onClick={() => moveBlock(idx, -1)} disabled={idx === 0} className="p-1 bg-gray-200 rounded text-xs hover:bg-gray-300 disabled:opacity-30">⬆️</button>
-                  <button onClick={() => moveBlock(idx, 1)} disabled={idx === trips.length - 1} className="p-1 bg-gray-200 rounded text-xs hover:bg-gray-300 disabled:opacity-30">⬇️</button>
+            <div key={groupName + gIdx} className={`rounded-lg border overflow-hidden ${isStandalone ? 'border-gray-300 bg-white' : 'border-blue-300 bg-blue-50/30'}`}>
+              {/* หัวกลุ่ม (แสดงเฉพาะกรณีที่มีกลุ่ม) */}
+              {!isStandalone && (
+                <div className="bg-blue-100 px-3 py-1.5 flex justify-between items-center border-b border-blue-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-blue-800">📦 งาน: {groupName}</span>
+                    <span className="text-[10px] bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">{group.indices.length} คัน</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => moveGroup(gIdx, -1)} disabled={gIdx === 0} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">⬆️</button>
+                    <button onClick={() => moveGroup(gIdx, 1)} disabled={gIdx === groups.length - 1} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">⬇️</button>
+                  </div>
                 </div>
-                <button onClick={() => deleteBlock(idx)} className="text-red-500 hover:text-red-700 text-xs">ลบ</button>
-              </div>
+              )}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-600 mb-0.5">ทะเบียนรถ</label>
-                  <input value={trip.licensePlate} onChange={e => updateField(idx, 'licensePlate', e.target.value)} onBlur={() => fetchVehicleData(idx, trip.licensePlate)} className="w-full py-1 px-2 border rounded bg-white text-sm" placeholder="เช่น 60-3794" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-600 mb-0.5">ข้อมูล GPS</label>
-                  {trip.gpsLink ? (
-                    <a href={trip.gpsLink} target="_blank" rel="noopener noreferrer" className="block w-full py-1 px-2 border border-blue-300 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 underline truncate text-sm text-center">📍 {trip.gpsName || 'เปิด GPS'}</a>
-                  ) : (
-                    <input value={trip.gpsName} disabled className="w-full py-1 px-2 border rounded bg-gray-50 text-gray-400 text-sm" readOnly />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-600 mb-0.5">หมายเหตุ (Auto)</label>
-                  <input value={trip.notes} disabled className="w-full py-1 px-2 border rounded bg-gray-50 text-gray-400 text-sm" readOnly />
-                </div>
-              </div>
+              {/* รายการในกลุ่ม */}
+              <div className={`${!isStandalone ? 'divide-y divide-blue-100' : ''}`}>
+                {group.indices.map((idx) => {
+                  const trip = trips[idx]
+                  const bgColor = trip.statusColor === 'ovn' ? '#00FFFF' : trip.statusColor === 'wait' ? '#FFFF00' : '#ffffff'
+                  
+                  return (
+                    <div key={trip.id || `temp-${idx}`} className="p-3 transition-colors" style={{ backgroundColor: bgColor }}>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] text-gray-400">
+                          {isStandalone ? 'งานเดี่ยว' : `คันที่ ${group.indices.indexOf(idx) + 1} ในกลุ่ม`}
+                        </span>
+                        <button onClick={() => deleteBlock(idx)} className="text-red-500 hover:text-red-700 text-xs">ลบ</button>
+                      </div>
 
-              <div className="mb-2">
-                <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Latitude, Longitude</label>
-                <input value={trip.latLng} onChange={e => updateField(idx, 'latLng', e.target.value)} onBlur={() => fetchLocationFromCoords(idx, trip.latLng)} className="w-full py-1 px-2 border rounded bg-white font-mono text-sm" placeholder="13.7563, 100.5018" />
-              </div>
+                      {/* ✅ ช่องกรอกรหัสงาน/ชื่อกลุ่ม */}
+                      <div className="mb-2">
+                        <label className="block text-[10px] font-medium text-gray-600 mb-0.5">📦 รหัสงาน/ชื่อกลุ่ม (Optional)</label>
+                        <input 
+                          value={trip.groupName} 
+                          onChange={e => updateField(idx, 'groupName', e.target.value)}
+                          className="w-full py-1 px-2 border rounded bg-white text-sm" 
+                          placeholder="เช่น JOB-A, งาน-001 (ใส่เหมือนกันเพื่อรวมกลุ่ม)"
+                        />
+                      </div>
 
-              <div className="mb-2">
-                <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Delivery Address</label>
-                <input value={trip.deliveryAddress} onChange={e => updateField(idx, 'deliveryAddress', e.target.value)} className="w-full py-1 px-2 border rounded bg-white text-sm" />
-              </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-0.5">ทะเบียนรถ</label>
+                          <input value={trip.licensePlate} onChange={e => updateField(idx, 'licensePlate', e.target.value)} onBlur={() => fetchVehicleData(idx, trip.licensePlate)} className="w-full py-1 px-2 border rounded bg-white text-sm" placeholder="เช่น 60-3794" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-0.5">ข้อมูล GPS</label>
+                          {trip.gpsLink ? (
+                            <a href={trip.gpsLink} target="_blank" rel="noopener noreferrer" className="block w-full py-1 px-2 border border-blue-300 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 underline truncate text-sm text-center">📍 {trip.gpsName || 'เปิด GPS'}</a>
+                          ) : (
+                            <input value={trip.gpsName} disabled className="w-full py-1 px-2 border rounded bg-gray-50 text-gray-400 text-sm" readOnly />
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-0.5">หมายเหตุ (Auto)</label>
+                          <input value={trip.notes} disabled className="w-full py-1 px-2 border rounded bg-gray-50 text-gray-400 text-sm" readOnly />
+                        </div>
+                      </div>
 
-              <div className="mb-2">
-                <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Location (Auto-detected)</label>
-                <input value={trip.locationName} onChange={e => updateField(idx, 'locationName', e.target.value)} className="w-full py-1 px-2 border rounded bg-white text-sm font-medium" placeholder="Phanom Phrai, Roi Et" />
-              </div>
+                      <div className="mb-2">
+                        <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Latitude, Longitude</label>
+                        <input value={trip.latLng} onChange={e => updateField(idx, 'latLng', e.target.value)} onBlur={() => fetchLocationFromCoords(idx, trip.latLng)} className="w-full py-1 px-2 border rounded bg-white font-mono text-sm" placeholder="13.7563, 100.5018" />
+                      </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2 bg-white/60 p-2 rounded">
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Dist. To Dest (KM)</label>
-                  <input type="number" value={trip.distanceKm} onChange={e => updateField(idx, 'distanceKm', e.target.value)} onKeyDown={e => handleDistanceInput(idx, e)} onBlur={e => handleDistanceInput(idx, e)} className="w-full py-1 px-2 border rounded bg-white text-sm" placeholder="0" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-600 mb-0.5">ETA (Hrs)</label>
-                  <input value={trip.eta} disabled className="w-full py-1 px-2 border rounded bg-gray-100 text-sm" readOnly />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-600 mb-0.5">เวลาถึง (วัน/เดือน/ปี HH.MM)</label>
-                  <input value={trip.arrivalTime} disabled className="w-full py-1 px-2 border rounded bg-gray-100 text-sm" readOnly />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-600 mb-0.5">อัปเดตล่าสุด</label>
-                  <input value={trip.updatedAt} disabled className="w-full py-1 px-2 border rounded bg-gray-100 text-[10px]" readOnly />
-                </div>
-              </div>
+                      <div className="mb-2">
+                        <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Delivery Address</label>
+                        <input value={trip.deliveryAddress} onChange={e => updateField(idx, 'deliveryAddress', e.target.value)} className="w-full py-1 px-2 border rounded bg-white text-sm" />
+                      </div>
 
-              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-black/10">
-                <button onClick={() => setTrips(prev => { const a=[...prev]; a[idx].statusColor = a[idx].statusColor === 'ovn' ? 'default' : 'ovn'; return a })} className={`px-3 py-1 rounded text-xs border ${trip.statusColor === 'ovn' ? 'bg-[#00FFFF] border-[#00cccc] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>OVN</button>
-                <button onClick={() => setTrips(prev => { const a=[...prev]; a[idx].statusColor = a[idx].statusColor === 'wait' ? 'default' : 'wait'; return a })} className={`px-3 py-1 rounded text-xs border ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>Wait</button>
-                <div className="ml-auto">
-                  <button onClick={() => saveBlock(idx)} className="bg-green-600 text-white px-4 py-1.5 rounded hover:bg-green-700 text-xs font-medium"> บันทึก</button>
-                </div>
+                      <div className="mb-2">
+                        <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Location (Auto-detected)</label>
+                        <input value={trip.locationName} onChange={e => updateField(idx, 'locationName', e.target.value)} className="w-full py-1 px-2 border rounded bg-white text-sm font-medium" placeholder="Phanom Phrai, Roi Et" />
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2 bg-white/60 p-2 rounded">
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Dist. To Dest (KM)</label>
+                          <input type="number" value={trip.distanceKm} onChange={e => updateField(idx, 'distanceKm', e.target.value)} onKeyDown={e => handleDistanceInput(idx, e)} onBlur={e => handleDistanceInput(idx, e)} className="w-full py-1 px-2 border rounded bg-white text-sm" placeholder="0" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-0.5">ETA (Hrs)</label>
+                          <input value={trip.eta} disabled className="w-full py-1 px-2 border rounded bg-gray-100 text-sm" readOnly />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-0.5">เวลาถึง (วัน/เดือน/ปี HH.MM)</label>
+                          <input value={trip.arrivalTime} disabled className="w-full py-1 px-2 border rounded bg-gray-100 text-sm" readOnly />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-0.5">อัปเดตล่าสุด</label>
+                          <input value={trip.updatedAt} disabled className="w-full py-1 px-2 border rounded bg-gray-100 text-[10px]" readOnly />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-black/10">
+                        <button onClick={() => setTrips(prev => { const a=[...prev]; a[idx].statusColor = a[idx].statusColor === 'ovn' ? 'default' : 'ovn'; return a })} className={`px-3 py-1 rounded text-xs border ${trip.statusColor === 'ovn' ? 'bg-[#00FFFF] border-[#00cccc] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>OVN</button>
+                        <button onClick={() => setTrips(prev => { const a=[...prev]; a[idx].statusColor = a[idx].statusColor === 'wait' ? 'default' : 'wait'; return a })} className={`px-3 py-1 rounded text-xs border ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>Wait</button>
+                        <div className="ml-auto">
+                          <button onClick={() => saveBlock(idx)} className="bg-green-600 text-white px-4 py-1.5 rounded hover:bg-green-700 text-xs font-medium"> บันทึก</button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
