@@ -7,7 +7,7 @@ import Link from 'next/link'
 
 interface TripBlock {
   id?: string
-  workDate: string      // ✅ เพิ่มฟิลด์วันที่ทำงาน
+  workDate: string
   groupName: string
   licensePlate: string
   gpsName: string
@@ -29,12 +29,11 @@ export default function TrackingPage() {
   const router = useRouter()
   const [trips, setTrips] = useState<TripBlock[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedDate, setSelectedDate] = useState<string>('') // ✅ State เลือกวันที่
+  const [selectedDate, setSelectedDate] = useState<string>('')
   const [isMergeMode, setIsMergeMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => { 
-    // ✅ ตั้งค่าวันที่เป็นวันนี้โดยอัตโนมัติ
     const today = new Date().toISOString().split('T')[0]
     setSelectedDate(today)
     fetchTrips(today)
@@ -47,7 +46,7 @@ export default function TrackingPage() {
       const { data, error } = await supabase
         .from('trip_logs')
         .select('*')
-        .eq('work_date', date) // ✅ กรองตามวันที่
+        .eq('work_date', date)
         .order('sort_order', { ascending: true })
       
       if (error) throw error
@@ -63,7 +62,6 @@ export default function TrackingPage() {
     } catch (err) { console.error(err) } finally { setLoading(false) }
   }
 
-  // ✅ เมื่อเปลี่ยนวันที่
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDate = e.target.value
     setSelectedDate(newDate)
@@ -79,7 +77,7 @@ export default function TrackingPage() {
     }
     const tempId = `temp-${Date.now()}-${Math.random()}`
     setTrips(prev => [...prev, {
-      id: tempId, workDate: selectedDate, // ✅ บันทึกวันที่
+      id: tempId, workDate: selectedDate,
       groupName: '', licensePlate: '', gpsName: '', gpsLink: '', notes: '', latLng: '', deliveryAddress: '',
       locationName: '', distanceKm: '', eta: '', arrivalTime: '', updatedAt: '',
       statusColor: 'default', isNew: true
@@ -113,23 +111,34 @@ export default function TrackingPage() {
   const fetchLocationFromCoords = useCallback(async (index: number, latLng: string) => {
     const coords = latLng.split(',').map(c => c.trim())
     if (coords.length !== 2 || isNaN(Number(coords[0])) || isNaN(Number(coords[1]))) return
+
     try {
       const [lat, lng] = coords
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en&zoom=10`, {
-        headers: { 'User-Agent': 'LogisticsCommandCenter/1.0' }
-      })
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en&zoom=10`,
+        { headers: { 'User-Agent': 'LogisticsCommandCenter/1.0' } }
+      )
       const data = await res.json()
       const addr = data.address || {}
-      const district = addr.city || addr.town || addr.village || addr.county || addr.municipality || ''
+
+      // ✅ แก้ไขใหม่: ดึงเฉพาะ อำเภอ (District) และ จังหวัด (Province)
+      const district = addr.county || addr.city_district || ''
       const province = addr.state || ''
+
       let location = ''
       if (district && province) location = `${district}, ${province}`
       else if (district) location = district
       else if (province) location = province
       else location = data.display_name?.split(',')[0] || ''
 
-      setTrips(prev => { const newTrips = [...prev]; newTrips[index].locationName = location; return newTrips })
-    } catch (err) { console.error('Geocoding error:', err) }
+      setTrips(prev => {
+        const newTrips = [...prev]
+        newTrips[index].locationName = location
+        return newTrips
+      })
+    } catch (err) {
+      console.error('Geocoding error:', err)
+    }
   }, [])
 
   const calculateMetrics = (index: number, distStr: string) => {
@@ -240,7 +249,7 @@ export default function TrackingPage() {
   const saveBlock = async (index: number) => {
     const trip = trips[index]
     const payload = {
-      work_date: trip.workDate || selectedDate, // ✅ บันทึกวันที่
+      work_date: trip.workDate || selectedDate,
       group_name: trip.groupName,
       license_plate: trip.licensePlate, gps_name: trip.gpsName, gps_link: trip.gpsLink, notes: trip.notes,
       lat_lng: trip.latLng, delivery_address: trip.deliveryAddress, location_name: trip.locationName,
@@ -267,7 +276,6 @@ export default function TrackingPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login') }
 
-  // ✅ Format วันที่เป็นภาษาไทย
   const formatDateThai = (dateStr: string) => {
     if (!dateStr) return ''
     const date = new Date(dateStr)
@@ -290,7 +298,6 @@ export default function TrackingPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-3 py-3 space-y-3">
-        {/* ✅ ส่วนเลือกวันที่ (อยู่ด้านบนสุด) */}
         <div className="bg-linear-to-r from-blue-500 to-blue-600 p-3 rounded-lg shadow-md">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-1">
@@ -310,7 +317,6 @@ export default function TrackingPage() {
           </div>
         </div>
 
-        {/* Toolbar */}
         <div className="flex justify-between items-center bg-white p-2 rounded shadow-sm border border-gray-200">
           <button 
             onClick={addBlock} 
@@ -341,14 +347,12 @@ export default function TrackingPage() {
           </div>
         </div>
 
-        {/* แสดงจำนวนงาน */}
         {selectedDate && (
           <div className="text-center text-xs text-gray-600 bg-white py-1 px-3 rounded border border-gray-200">
             📊 มีงานทั้งหมด <span className="font-bold text-blue-600">{trips.length}</span> คัน
           </div>
         )}
 
-        {/* รายการบล็อก */}
         {!selectedDate ? (
           <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-center">
             <div className="text-6xl mb-4">📅</div>
