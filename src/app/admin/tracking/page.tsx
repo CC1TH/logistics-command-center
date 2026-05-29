@@ -291,7 +291,7 @@ export default function TrackingPage() {
 
       <main className="max-w-3xl mx-auto px-3 py-3 space-y-3">
         {/* ✅ ส่วนเลือกวันที่ (อยู่ด้านบนสุด) */}
-        <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-3 rounded-lg shadow-md">
+        <div className="bg-linear-to-r from-blue-500 to-blue-600 p-3 rounded-lg shadow-md">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-1">
               <label className="text-white text-sm font-bold whitespace-nowrap">
