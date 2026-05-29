@@ -5,10 +5,12 @@ import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
+// ✅ เพิ่ม gpsLink เข้าไปใน Interface
 interface TripBlock {
   id?: string
   licensePlate: string
   gpsName: string
+  gpsLink: string // เพิ่มมาเพื่อดึงลิงก์
   notes: string
   latLng: string
   deliveryAddress: string
@@ -18,7 +20,6 @@ interface TripBlock {
   arrivalTime: string
   updatedAt: string
   statusColor: 'default' | 'ovn' | 'wait'
-  isLocked: boolean
   isNew?: boolean
 }
 
@@ -46,6 +47,7 @@ export default function TrackingPage() {
         id: t.id,
         licensePlate: t.license_plate || '',
         gpsName: t.gps_name || '',
+        gpsLink: t.gps_link || '', // ✅ ดึงลิงก์มาเก็บไว้
         notes: t.notes || '',
         latLng: t.lat_lng || '',
         deliveryAddress: t.delivery_address || '',
@@ -55,7 +57,6 @@ export default function TrackingPage() {
         arrivalTime: t.arrival_time || '',
         updatedAt: t.updated_at || '',
         statusColor: t.status_color || 'default',
-        isLocked: false, // ✅ อนุญาตให้แก้ไขได้เสมอ
         isNew: false
       }))
 
@@ -69,9 +70,9 @@ export default function TrackingPage() {
 
   const addBlock = () => {
     setTrips(prev => [...prev, {
-      licensePlate: '', gpsName: '', notes: '', latLng: '', deliveryAddress: '',
+      licensePlate: '', gpsName: '', gpsLink: '', notes: '', latLng: '', deliveryAddress: '',
       locationName: '', distanceKm: '', eta: '', arrivalTime: '', updatedAt: '',
-      statusColor: 'default', isLocked: false, isNew: true
+      statusColor: 'default', isNew: true
     }])
   }
 
@@ -83,12 +84,13 @@ export default function TrackingPage() {
     })
   }
 
+  // ✅ ฟังก์ชันดึงข้อมูลรถ เพิ่มการดึง gps_link เข้ามาด้วย
   const fetchVehicleData = async (index: number, plate: string) => {
     if (plate.length < 3) return
     try {
       const { data, error } = await supabase
         .from('vehicles')
-        .select('gps_name, notes')
+        .select('gps_name, gps_link, notes') // ✅ เพิ่ม gps_link
         .eq('license_plate', plate)
         .single()
       
@@ -96,6 +98,7 @@ export default function TrackingPage() {
         setTrips(prev => {
           const newTrips = [...prev]
           newTrips[index].gpsName = data.gps_name || ''
+          newTrips[index].gpsLink = data.gps_link || '' // ✅ อัปเดต state ลิงก์
           newTrips[index].notes = data.notes || ''
           return newTrips
         })
@@ -185,16 +188,14 @@ export default function TrackingPage() {
     setTrips(prev => prev.filter((_, i) => i !== index))
   }
 
+  // ✅ ลบเงื่อนไขบังคับกรอกข้อมูลออก (บันทึกได้ทันที)
   const saveBlock = async (index: number) => {
     const trip = trips[index]
-    if (!trip.licensePlate || !trip.latLng) {
-      alert('กรุณากรอกทะเบียนรถ และ พิกัด Lat,Lng ให้ครบถ้วน')
-      return
-    }
 
     const payload = {
       license_plate: trip.licensePlate,
       gps_name: trip.gpsName,
+      gps_link: trip.gpsLink, // ✅ บันทึกลิงก์ด้วย
       notes: trip.notes,
       lat_lng: trip.latLng,
       delivery_address: trip.deliveryAddress,
@@ -204,7 +205,6 @@ export default function TrackingPage() {
       arrival_time: trip.arrivalTime,
       updated_at: trip.updatedAt,
       status_color: trip.statusColor,
-      is_locked: false, // ✅ ไม่ล็อก ให้แก้ไขได้เสมอ
       sort_order: index
     }
 
@@ -236,7 +236,8 @@ export default function TrackingPage() {
       return arr
     })
     
-    alert('บันทึกข้อมูลสำเร็จ')
+    // ✅ ลบ Alert แจ้งเตือนออก เพื่อให้การใช้งานลื่นไหลขึ้น (หรือจะคงไว้ก็ได้)
+    // alert('บันทึกข้อมูลสำเร็จ') 
   }
 
   const handleLogout = async () => {
@@ -252,7 +253,6 @@ export default function TrackingPage() {
         <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold">🚛 Trip Tracking & Status</h1>
-            {/* ✅ เพิ่มลิงก์เชื่อมโยง */}
             <Link href="/admin/vehicles" className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 font-medium">
               🚗 จัดการข้อมูลรถ
             </Link>
@@ -299,8 +299,20 @@ export default function TrackingPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">ข้อมูล GPS (Auto)</label>
-                  <input value={trip.gpsName} disabled className="w-full p-2 border rounded bg-gray-50 text-gray-500" readOnly />
+                  <label className="block text-xs font-medium text-gray-600 mb-1">ข้อมูล GPS</label>
+                  {/* ✅ เปลี่ยนเป็นแสดงผลแบบลิงก์ถ้ามีลิงก์ */}
+                  {trip.gpsLink ? (
+                    <a 
+                      href={trip.gpsLink} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="block w-full p-2 border rounded bg-blue-50 text-blue-600 hover:bg-blue-100 underline truncate"
+                    >
+                      {trip.gpsName || 'เปิด GPS'}
+                    </a>
+                  ) : (
+                    <input value={trip.gpsName} disabled className="w-full p-2 border rounded bg-gray-50 text-gray-500" readOnly />
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">หมายเหตุ (Auto)</label>
