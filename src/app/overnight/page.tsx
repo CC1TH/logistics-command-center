@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Navigation from '@/components/Navigation'
 import { useRouter } from 'next/navigation'
 
@@ -15,16 +15,29 @@ interface OverNightRow {
   remarks: string
 }
 
+const INITIAL_ROWS = Array.from({ length: 50 }, (_, i) => ({
+  id: i + 1,
+  booking: '', truck: '', trailer: '', contNo: '', puDate: '', shipment: '', remarks: ''
+}))
+
 const DATA_KEYS: (keyof Omit<OverNightRow, 'id'>)[] = ['booking', 'truck', 'trailer', 'contNo', 'puDate', 'shipment', 'remarks']
 
 export default function OverNightPage() {
   const router = useRouter()
-  const [rows, setRows] = useState<OverNightRow[]>(
-    Array.from({ length: 50 }, (_, i) => ({
-      id: i + 1,
-      booking: '', truck: '', trailer: '', contNo: '', puDate: '', shipment: '', remarks: ''
-    }))
-  )
+  
+  // ✅ โหลดข้อมูลจาก LocalStorage ทันทีที่เปิดหน้า
+  const [rows, setRows] = useState<OverNightRow[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('overnight-data')
+      if (saved) return JSON.parse(saved)
+    }
+    return INITIAL_ROWS
+  })
+
+  // ✅ Auto-Save ทุกครั้งที่ข้อมูลเปลี่ยน
+  useEffect(() => {
+    localStorage.setItem('overnight-data', JSON.stringify(rows))
+  }, [rows])
 
   const updateRow = useCallback((id: number, field: keyof OverNightRow, value: string) => {
     setRows(prev => prev.map(row => row.id === id ? { ...row, [field]: value } : row))
@@ -57,7 +70,6 @@ export default function OverNightPage() {
 
   // ✅ Navigation แบบ Excel (Tab/Enter)
   const handleKeyDown = (e: React.KeyboardEvent, rowIndex: number, colIndex: number) => {
-    const inputs = document.querySelectorAll('input[data-row]')
     const nextInput = (row: number, col: number) => {
       const target = document.querySelector(`input[data-row="${row}"][data-col="${col}"]`) as HTMLInputElement
       target?.focus()
@@ -81,21 +93,19 @@ export default function OverNightPage() {
 
   const clearAll = () => {
     if (confirm('ยืนยันการล้าง/เคลียร์ข้อมูลในหน้านี้หรือไม่?')) {
-      setRows(Array.from({ length: 50 }, (_, i) => ({
-        id: i + 1, booking: '', truck: '', trailer: '', contNo: '', puDate: '', shipment: '', remarks: ''
-      })))
+      setRows(INITIAL_ROWS)
+      localStorage.removeItem('overnight-data') // ลบข้อมูลออกจาก Storage ด้วย
     }
   }
 
   const handleSummary = () => {
-    sessionStorage.setItem('overnight-data', JSON.stringify(rows))
     router.push('/overnight/summary')
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
-      <main className="max-w-[1800px] mx-auto px-4 py-6">
+      <main className="max-w-screen-2xl mx-auto px-4 py-6">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-bold text-gray-800">OverNight</h1>
           <div className="flex gap-2">
@@ -115,7 +125,7 @@ export default function OverNightPage() {
                 <tr>
                   <th className="px-3 py-3 text-left text-xs font-bold text-white w-10 border-r border-blue-500">#</th>
                   {['Booking', 'Truck', 'Trailer', 'Cont No.', 'P/U Date', 'Shipment', 'Remarks'].map((h, i) => (
-                    <th key={i} className="px-3 py-3 text-left text-xs font-bold text-white min-w-[140px] border-r border-blue-500 last:border-r-0">{h}</th>
+                    <th key={i} className="px-3 py-3 text-left text-xs font-bold text-white min-w-36 (144px) border-r border-blue-500 last:border-r-0">{h}</th>
                   ))}
                 </tr>
               </thead>

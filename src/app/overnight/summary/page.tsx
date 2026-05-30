@@ -21,19 +21,20 @@ export default function OverNightSummaryPage() {
   const [sortedDates, setSortedDates] = useState<string[]>([])
 
   useEffect(() => {
-    const raw = sessionStorage.getItem('overnight-data')
+    // ✅ อ่านจาก localStorage แทน sessionStorage
+    const raw = localStorage.getItem('overnight-data')
+    
     if (!raw) {
+      // ถ้าไม่มีข้อมูลเลยให้กลับหน้าเดิม
       router.push('/overnight')
       return
     }
 
     const allRows: OverNightRow[] = JSON.parse(raw)
-    // กรองแถวที่กรอกข้อมูลอย่างน้อย 1 ช่อง
     const filledRows = allRows.filter(r => 
       r.booking || r.truck || r.trailer || r.contNo || r.puDate || r.shipment || r.remarks
     )
 
-    // จัดกลุ่มตาม P/U Date
     const grouped: Record<string, OverNightRow[]> = {}
     filledRows.forEach(row => {
       const date = row.puDate || 'ไม่ระบุวันที่'
@@ -41,10 +42,11 @@ export default function OverNightSummaryPage() {
       grouped[date].push(row)
     })
 
-    // เรียงวันที่
     const dates = Object.keys(grouped).sort((a, b) => {
       if (a === 'ไม่ระบุวันที่') return 1
       if (b === 'ไม่ระบุวันที่') return -1
+      // ลองแปลงเป็น Date เพื่อเรียงลำดับ (สมมติ format เป็น YYYY-MM-DD หรือ DD/MM/YYYY)
+      // หากเป็น DD/MM/YYYY ต้อง parse เอง แต่ถ้าเป็น input type="date" จะได้ YYYY-MM-DD
       return new Date(a).getTime() - new Date(b).getTime()
     })
 
@@ -91,10 +93,10 @@ export default function OverNightSummaryPage() {
                         <td className="px-4 py-2 font-medium text-gray-900">{row.booking}</td>
                         <td className="px-4 py-2 text-gray-600">{row.truck}</td>
                         <td className="px-4 py-2 text-gray-600">{row.contNo}</td>
-                        <td className="px-4 py-2 text-gray-600 max-w-[250px] truncate">{row.shipment}</td>
-                        <td className="px-4 py-2 text-gray-600 max-w-[200px] truncate">{row.remarks}</td>
+                        <td className="px-4 py-2 text-gray-600 max-w-xs (320px) truncate">{row.shipment}</td>
+                        <td className="px-4 py-2 text-gray-600 max-w-sm (384px) truncate">{row.remarks}</td>
                         <td className="px-4 py-2">
-                          <button className="text-red-500 hover:text-red-700 text-xs">️ ลบ</button>
+                          <button className="text-red-500 hover:text-red-700 text-xs">ลบ</button>
                         </td>
                       </tr>
                     ))}
