@@ -21,11 +21,9 @@ export default function OverNightSummaryPage() {
   const [sortedDates, setSortedDates] = useState<string[]>([])
 
   useEffect(() => {
-    // ✅ อ่านจาก localStorage แทน sessionStorage
     const raw = localStorage.getItem('overnight-data')
     
     if (!raw) {
-      // ถ้าไม่มีข้อมูลเลยให้กลับหน้าเดิม
       router.push('/overnight')
       return
     }
@@ -45,8 +43,6 @@ export default function OverNightSummaryPage() {
     const dates = Object.keys(grouped).sort((a, b) => {
       if (a === 'ไม่ระบุวันที่') return 1
       if (b === 'ไม่ระบุวันที่') return -1
-      // ลองแปลงเป็น Date เพื่อเรียงลำดับ (สมมติ format เป็น YYYY-MM-DD หรือ DD/MM/YYYY)
-      // หากเป็น DD/MM/YYYY ต้อง parse เอง แต่ถ้าเป็น input type="date" จะได้ YYYY-MM-DD
       return new Date(a).getTime() - new Date(b).getTime()
     })
 
@@ -54,19 +50,65 @@ export default function OverNightSummaryPage() {
     setSortedDates(dates)
   }, [router])
 
+  // ✅ ฟังก์ชันคัดลอกข้อมูลทั้งหมด
+  const handleCopyAll = () => {
+    const allData: string[][] = []
+    
+    // เพิ่ม Header
+    allData.push(['Booking', 'Truck', 'Cont No.', 'Shipment', 'Remarks', 'P/U Date'])
+    
+    // เพิ่มข้อมูลแต่ละแถว
+    sortedDates.forEach(date => {
+      groupedData[date].forEach(row => {
+        allData.push([
+          row.booking,
+          row.truck,
+          row.contNo,
+          row.shipment,
+          row.remarks,
+          date
+        ])
+      })
+    })
+    
+    // แปลงเป็น CSV format (Tab-separated)
+    const textData = allData.map(row => row.join('\t')).join('\n')
+    
+    // คัดลอกไปยัง Clipboard
+    navigator.clipboard.writeText(textData).then(() => {
+      alert('คัดลอกข้อมูลทั้งหมดสำเร็จ! สามารถวางใน Excel หรือ Google Sheets ได้เลย')
+    }).catch(err => {
+      console.error('Failed to copy:', err)
+      alert('เกิดข้อผิดพลาดในการคัดลอก')
+    })
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
       <main className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">Dashboard OverNight</h1>
-          <div className="flex gap-2">
-            <span className="text-sm text-gray-500 self-center">ทั้งหมด {sortedDates.reduce((acc, d) => acc + groupedData[d].length, 0)} รายการ</span>
+          {/* ด้านซ้าย: ปุ่มกลับ + หัวข้อ */}
+          <div className="flex items-center gap-3">
             <button 
-              onClick={() => router.back()} 
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
+              onClick={() => router.push('/overnight')}
+              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-1"
             >
-              🔙 กลับ
+              ← กลับ
+            </button>
+            <h1 className="text-2xl font-bold text-gray-800">Dashboard OverNight</h1>
+          </div>
+          
+          {/* ด้านขวา: จำนวนรายการ + ปุ่มคัดลอกทั้งหมด */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">
+              ทั้งหมด {sortedDates.reduce((acc, d) => acc + groupedData[d].length, 0)} รายการ
+            </span>
+            <button 
+              onClick={handleCopyAll}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              📋 คัดลอกทั้งหมด
             </button>
           </div>
         </div>
@@ -93,10 +135,10 @@ export default function OverNightSummaryPage() {
                         <td className="px-4 py-2 font-medium text-gray-900">{row.booking}</td>
                         <td className="px-4 py-2 text-gray-600">{row.truck}</td>
                         <td className="px-4 py-2 text-gray-600">{row.contNo}</td>
-                        <td className="px-4 py-2 text-gray-600 max-w-xs (320px) truncate">{row.shipment}</td>
-                        <td className="px-4 py-2 text-gray-600 max-w-sm (384px) truncate">{row.remarks}</td>
+                        <td className="px-4 py-2 text-gray-600 max-w-xs truncate">{row.shipment}</td>
+                        <td className="px-4 py-2 text-gray-600 max-w-sm truncate">{row.remarks}</td>
                         <td className="px-4 py-2">
-                          <button className="text-red-500 hover:text-red-700 text-xs">ลบ</button>
+                          <button className="text-red-500 hover:text-red-700 text-xs">🗑️ ลบ</button>
                         </td>
                       </tr>
                     ))}
