@@ -257,6 +257,22 @@ export default function TrackingPage() {
     }
   }
 
+  // ✅ ฟังก์ชันยกเลิกการรวมกลุ่ม (Cancel Group)
+  const cancelGroup = (groupName: string) => {
+    if (!groupName) return
+    if (!confirm(`ต้องการยกเลิกการรวมกลุ่ม "${groupName}" ใช่หรือไม่?`)) return
+    
+    setAllTrips(prev => {
+      const newTrips = [...prev]
+      newTrips.forEach(trip => {
+        if (trip.groupName === groupName) {
+          trip.groupName = '' // ล้างชื่อกลุ่ม -> กลับมาเป็นงานเดี่ยว
+        }
+      })
+      return newTrips
+    })
+  }
+
   const currentDayTrips = useMemo(() => {
     const trips = allTrips.filter(t => t.workDate === selectedDate)
     const tempGroups: Record<string, number[]> = {}
@@ -480,6 +496,14 @@ export default function TrackingPage() {
                           <span className="text-sm font-bold text-blue-800">📦 กลุ่ม: {groupName}</span>
                           <span className="text-[10px] bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">{group.indices.length} คัน</span>
                         </div>
+                        
+                        {/* ✅ ปุ่มยกเลิกการรวมกลุ่ม */}
+                        <button 
+                          onClick={() => cancelGroup(groupName)}
+                          className="text-xs font-medium text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-all"
+                        >
+                           ยกเลิก
+                        </button>
                       </div>
                     )}
                     <div className={`${!isStandalone ? 'divide-y divide-blue-100/50' : ''}`}>
@@ -609,7 +633,7 @@ export default function TrackingPage() {
             isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
           }`}
         >
-          {isMergeMode ? '✅ ยืนยันการรวม' : '🔗 รวม'}
+          {isMergeMode ? '✅ ยืนยันการรวม' : ' รวม'}
         </button>
         <button 
           onClick={addBlock}
