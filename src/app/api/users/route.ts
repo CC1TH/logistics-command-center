@@ -1,18 +1,30 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabaseClient'
+import { createClient } from '@supabase/supabase-js'
 
 export async function GET() {
-  const supabase = createClient()
-  
   try {
-    // ใช้ admin API ผ่าน service role
-    const { data: { users }, error } = await supabase.auth.admin.listUsers()
+    // ใช้ Service Role Key สำหรับ Admin API
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
     
-    if (error) throw error
+    const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers()
+    
+    if (error) {
+      console.error('Error listing users:', error)
+      throw error
+    }
 
     return NextResponse.json({ users })
   } catch (error) {
-    console.error('Error fetching users:', error)
+    console.error('Error in GET /api/users:', error)
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
 }
