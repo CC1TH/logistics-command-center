@@ -21,6 +21,11 @@ export default function OverNightSummaryPage() {
   const [sortedDates, setSortedDates] = useState<string[]>([])
 
   useEffect(() => {
+    loadData()
+  }, [router])
+
+  // ✅ ฟังก์ชันโหลดข้อมูล
+  const loadData = () => {
     const raw = localStorage.getItem('overnight-data')
     
     if (!raw) {
@@ -48,20 +53,36 @@ export default function OverNightSummaryPage() {
 
     setGroupedData(grouped)
     setSortedDates(dates)
-  }, [router])
+  }
 
-  // ✅ ฟังก์ชันคัดลอกข้อมูลทั้งหมด (รูปแบบใหม่ตามที่ต้องการ)
+  // ✅ ฟังก์ชันลบข้อมูล
+  const handleDelete = (rowId: number, date: string) => {
+    if (!confirm('ต้องการลบรายการนี้ใช่หรือไม่?')) return
+
+    // อ่านข้อมูลปัจจุบันจาก localStorage
+    const raw = localStorage.getItem('overnight-data')
+    if (!raw) return
+
+    const allRows: OverNightRow[] = JSON.parse(raw)
+    
+    // กรองแถวที่ต้องการลบออก (ใช้ id และ date ในการระบุ)
+    const updatedRows = allRows.filter(row => !(row.id === rowId && row.puDate === date))
+    
+    // บันทึกกลับลง localStorage
+    localStorage.setItem('overnight-data', JSON.stringify(updatedRows))
+    
+    // โหลดข้อมูลใหม่เพื่ออัปเดต UI
+    loadData()
+  }
+
+  // ✅ ฟังก์ชันคัดลอกข้อมูลทั้งหมด
   const handleCopyAll = () => {
     let output = ''
     
-    // วนลูปแต่ละวันที่
     sortedDates.forEach(date => {
       const rows = groupedData[date]
-      
-      // เพิ่มวันที่
       output += `${date}\n`
       
-      // เพิ่มข้อมูลแต่ละแถวในรูปแบบ: Booking // Truck // Cont No. // Shipment // Remarks
       rows.forEach(row => {
         const line = [
           row.booking,
@@ -70,15 +91,12 @@ export default function OverNightSummaryPage() {
           row.shipment,
           row.remarks
         ].join(' // ')
-        
         output += `${line}\n`
       })
       
-      // เว้นบรรทัดว่างระหว่างวัน
       output += '\n'
     })
     
-    // คัดลอกไปยัง Clipboard
     navigator.clipboard.writeText(output).then(() => {
       alert('คัดลอกข้อมูลทั้งหมดสำเร็จ! สามารถวางใน Notepad, Excel หรือ Google Sheets ได้เลย')
     }).catch(err => {
@@ -92,7 +110,6 @@ export default function OverNightSummaryPage() {
       <Navigation />
       <main className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex justify-between items-center mb-6">
-          {/* ด้านซ้าย: ปุ่มกลับ + หัวข้อ */}
           <div className="flex items-center gap-3">
             <button 
               onClick={() => router.push('/overnight')}
@@ -103,7 +120,6 @@ export default function OverNightSummaryPage() {
             <h1 className="text-2xl font-bold text-gray-800">Dashboard OverNight</h1>
           </div>
           
-          {/* ด้านขวา: จำนวนรายการ + ปุ่มคัดลอกทั้งหมด */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500">
               ทั้งหมด {sortedDates.reduce((acc, d) => acc + groupedData[d].length, 0)} รายการ
@@ -135,14 +151,19 @@ export default function OverNightSummaryPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {groupedData[date].map(row => (
-                      <tr key={row.id} className="hover:bg-gray-50">
+                      <tr key={`${row.id}-${date}`} className="hover:bg-gray-50">
                         <td className="px-4 py-2 font-medium text-gray-900">{row.booking}</td>
                         <td className="px-4 py-2 text-gray-600">{row.truck}</td>
                         <td className="px-4 py-2 text-gray-600">{row.contNo}</td>
                         <td className="px-4 py-2 text-gray-600 max-w-xs truncate">{row.shipment}</td>
                         <td className="px-4 py-2 text-gray-600 max-w-sm truncate">{row.remarks}</td>
                         <td className="px-4 py-2">
-                          <button className="text-red-500 hover:text-red-700 text-xs">🗑️ ลบ</button>
+                          <button 
+                            onClick={() => handleDelete(row.id, date)}
+                            className="text-red-500 hover:text-red-700 text-xs font-medium"
+                          >
+                            🗑️ ลบ
+                          </button>
                         </td>
                       </tr>
                     ))}
