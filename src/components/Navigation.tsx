@@ -11,7 +11,8 @@ export default function Navigation() {
   const tabs = [
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Manual E-Mail', path: '/admin/tracking' },
-    { name: 'OverNight', path: '/overnight' }, // ✅ เพิ่ม Tab OverNight ตรงนี้
+    { name: 'OverNight', path: '/overnight' },
+    { name: 'Data Comparison', path: '/compare' }, // ✅ เปลี่ยนชื่อเป็น Data Comparison
     { name: 'Settings', path: '/admin/settings' },
   ]
 
