@@ -108,7 +108,7 @@ export default function TrackingPage() {
     } catch (err) { console.error('Vehicle fetch error:', err) }
   }
 
-  // ✅ แก้ไขฟังก์ชันนี้เพื่อตัดคำที่ไม่ต้องการออก
+  // ✅ แก้ไขระบบดึง Location ใหม่: ตัด Subdistrict ออก, เอาเฉพาะ District และ Province
   const fetchLocationFromCoords = useCallback(async (index: number, latLng: string) => {
     const coords = latLng.split(',').map(c => c.trim())
     if (coords.length !== 2 || isNaN(Number(coords[0])) || isNaN(Number(coords[1]))) return
@@ -122,26 +122,40 @@ export default function TrackingPage() {
       const data = await res.json()
       const addr = data.address || {}
 
-      // ✅ 1. ดึงชื่ออำเภอ (District) โดยให้ความสำคัญกับ 'city' ก่อน
-      let rawDistrict = addr.city || addr.town || addr.municipality || addr.county || ''
-      
-      // ✅ 2. ดึงชื่อจังหวัด (Province)
-      let rawProvince = addr.state || ''
+      // 1. พยายามดึงโดยตรงจากฟิลด์ก่อน
+      let district = addr.county || addr.city_district || ''
+      let province = addr.state || ''
 
-      // ✅ 3. ตัดคำที่ไม่ต้องการออก
-      const unwantedWords = ['Subdistrict', 'Administrative', 'Organization', 'Municipality', 'Province', 'Changwat']
-      
-      unwantedWords.forEach(word => {
-        // ตัดคำออกทั้งในอำเภอและจังหวัด
-        rawDistrict = rawDistrict.replace(new RegExp(`\\s*${word}\\s*`, 'gi'), ' ').trim()
-        rawProvince = rawProvince.replace(new RegExp(`\\s*${word}\\s*`, 'gi'), ' ').trim()
-      })
+      // 2. ถ้าไม่ได้ หรือต้องการความชัวร์ ให้แยกจาก display_name (รูปแบบ: ถนน, ตำบล, อำเภอ, จังหวัด, ...)
+      if (!district || !province) {
+        const fullName = data.display_name || ""
+        const parts = fullName.split(',').map((p: string) => p.trim())
+        
+        // วนลูปหา Province/State จากท้ายสุด
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i].toLowerCase()
+          if (p.includes('province') || p.includes('changwat') || p.includes('state')) {
+             // พบจังหวัดแล้ว
+             province = parts[i].replace(/(province|changwat|state)/gi, '').trim()
+             // อำเภอจะอยู่ก่อนหน้าจังหวัด 1 ตำแหน่ง
+             if (i > 0) {
+               district = parts[i-1]
+             }
+             break
+          }
+        }
+      }
 
-      // ✅ 4. จัดรูปแบบ
+      // 3. ตัดคำที่ไม่ต้องการทิ้ง
+      const unwantedWords = ['Subdistrict', 'Tambon', 'Administrative', 'Organization', 'Municipality', 'District', 'Amphoe']
+      
+      district = district.replace(new RegExp(unwantedWords.join('|'), 'gi'), '').trim()
+      province = province.replace(/(Province|Changwat|State)/gi, '').trim()
+
       let location = ''
-      if (rawDistrict && rawProvince) location = `${rawDistrict}, ${rawProvince}`
-      else if (rawDistrict) location = rawDistrict
-      else if (rawProvince) location = rawProvince
+      if (district && province) location = `${district}, ${province}`
+      else if (district) location = district
+      else if (province) location = province
       else location = data.display_name?.split(',')[0] || ''
 
       setTrips(prev => {
@@ -311,7 +325,7 @@ export default function TrackingPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-3 py-3 space-y-3">
-        {/* ✅ แก้ไข Warning: เปลี่ยนจาก bg-gradient-to-r เป็น bg-linear-to-r */}
+        {/* ✅ แก้ไข Tailwind Class */}
         <div className="bg-linear-to-r from-blue-500 to-blue-600 p-3 rounded-lg shadow-md">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-1">
