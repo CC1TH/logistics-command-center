@@ -1,34 +1,42 @@
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { createClient } from '@/lib/supabaseClient'
 
 export async function GET() {
+  const supabase = createClient()
+  
+  // ✅ 1. ตรวจสอบว่ามี user login หรือไม่
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  
+  if (userError || !user) {
+    return NextResponse.json({ error: 'Unauthorized - Please login' }, { status: 401 })
+  }
+
+  // ✅ 2. ตรวจสอบว่าเป็น Admin หรือไม่
+  const adminEmails = [
+    'admin@cc1etlth.co.th',
+    'commandth@cc1etlth.co.th',
+    'ccth@cc1etlth.co.th'
+  ]
+  
+  if (!adminEmails.includes(user.email || '')) {
+    return NextResponse.json({ error: 'Forbidden - Admin only' }, { status: 403 })
+  }
+
+  // ✅ 3. ดึงรายการ users ทั้งหมด
   try {
-    // ดึงข้อมูล users จาก auth
-    const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin.listUsers()
+    const { data: { users }, error } = await supabase.auth.admin.listUsers()
+    
+    if (error) throw error
 
-    if (authError) throw authError
-
-    // ดึงข้อมูล role จาก user_roles
-    const { data: roles, error: rolesError } = await supabaseAdmin
-      .from('user_roles')
-      .select('user_id, role')
-
-    if (rolesError) throw rolesError
-
-    // รวมข้อมูล
-    const usersWithRoles = authUsers.users.map(user => ({
-      id: user.id,
-      email: user.email || '',
-      created_at: user.created_at,
-      role: roles?.find(r => r.user_id === user.id)?.role || 'user'
-    }))
-
-    return NextResponse.json({ users: usersWithRoles })
-  } catch (error: any) {
+    return NextResponse.json({ 
+      users: users.map(u => ({
+        id: u.id,
+        email: u.email || '',
+        created_at: u.created_at
+      }))
+    })
+  } catch (error) {
     console.error('Error fetching users:', error)
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
 }
