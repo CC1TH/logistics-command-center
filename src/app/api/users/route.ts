@@ -1,14 +1,23 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabaseClient'
+import { createAdminClient } from '@/lib/supabaseClient'
 
 export async function GET() {
-  const supabase = createClient()
-  
   try {
+    // ✅ ใช้ Admin Client ที่มี Service Role Key
+    // เพื่อให้สามารถเรียก auth.admin.listUsers() ได้
+    const supabase = createAdminClient()
+    
+    // ดึงข้อมูลผู้ใช้ทั้งหมดจาก Supabase Auth
     const { data: { users }, error } = await supabase.auth.admin.listUsers()
     
-    if (error) throw error
+    if (error) {
+      console.error('❌ Supabase Error:', error)
+      throw error
+    }
 
+    console.log('✅ Successfully fetched users:', users.length)
+
+    // แปลงข้อมูลและส่งกลับ
     return NextResponse.json({ 
       users: users.map(u => ({
         id: u.id,
@@ -17,7 +26,10 @@ export async function GET() {
       }))
     })
   } catch (error) {
-    console.error('Error fetching users:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    console.error('❌ API Error:', error)
+    return NextResponse.json({ 
+      error: 'Failed to fetch users',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 }

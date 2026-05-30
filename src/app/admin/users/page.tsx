@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Navigation from '@/components/Navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabaseClient'
 
 interface User {
   id: string
@@ -14,7 +13,6 @@ interface User {
 
 export default function UsersPage() {
   const router = useRouter()
-  const supabase = createClient()
   
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
