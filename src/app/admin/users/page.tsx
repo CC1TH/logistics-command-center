@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -9,313 +8,198 @@ interface User {
   id: string
   email: string
   created_at: string
-  role?: string
 }
 
 export default function UsersPage() {
-  const supabase = createClient()
   const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
-  
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  })
+  const [newEmail, setNewEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [showAddForm, setShowAddForm] = useState(false)
 
   useEffect(() => {
-    checkCurrentUser()
     fetchUsers()
   }, [])
 
-  const checkCurrentUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    setCurrentUserEmail(user?.email || null)
-  }
-
   const fetchUsers = async () => {
+    setLoading(true)
     try {
-      const response = await fetch('/api/users')
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'ไม่สามารถดึงข้อมูลผู้ใช้ได้')
-      }
-
+      const res = await fetch('/api/users')
+      if (!res.ok) throw new Error('Failed to fetch users')
+      const data = await res.json()
       setUsers(data.users || [])
-    } catch (error) {
-      console.error('Error fetching users:', error)
+    } catch (err) {
+      console.error('Error fetching users:', err)
+      alert('ไม่สามารถโหลดข้อมูลผู้ใช้ได้')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    try {
-      const response = await fetch('/api/create-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'สร้างผู้ใช้งานไม่สำเร็จ')
-      }
-      
-      alert('สร้างผู้ใช้งานสำเร็จ')
-      resetForm()
-      fetchUsers()
-    } catch (error: any) {
-      console.error('Error creating user:', error)
-      alert('สร้างผู้ใช้งานไม่สำเร็จ: ' + error.message)
-    }
-  }
-
-  const handleDelete = async (userId: string, userEmail: string) => {
-    if (userEmail === currentUserEmail) {
-      alert('ไม่สามารถลบบัญชีตัวเองได้')
+  const handleAddUser = async () => {
+    if (!newEmail || !newPassword) {
+      alert('กรุณากรอกอีเมลและรหัสผ่าน')
       return
     }
 
-    if (!confirm(`ต้องการลบผู้ใช้งาน ${userEmail} ใช่หรือไม่?`)) return
+    try {
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newEmail, password: newPassword })
+      })
+      
+      if (!res.ok) throw new Error('Failed to create user')
+      
+      alert('สร้างผู้ใช้สำเร็จ')
+      setNewEmail('')
+      setNewPassword('')
+      setShowAddForm(false)
+      fetchUsers()
+    } catch (err) {
+      alert('เกิดข้อผิดพลาด: ' + (err as Error).message)
+    }
+  }
+
+  const handleDeleteUser = async (userId: string, email: string) => {
+    if (!confirm(`ต้องการลบผู้ใช้ ${email} ใช่หรือไม่?`)) return
 
     try {
-      const response = await fetch('/api/delete-user', {
+      const res = await fetch('/api/delete-user', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId })
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'ลบผู้ใช้งานไม่สำเร็จ')
-      }
       
-      alert('ลบผู้ใช้งานสำเร็จ')
-      fetchUsers()
-    } catch (error: any) {
-      console.error('Error deleting user:', error)
-      alert('ลบผู้ใช้งานไม่สำเร็จ: ' + error.message)
-    }
-  }
-
-  const handleToggleAdmin = async (userId: string, currentRole: string) => {
-    try {
-      if (currentRole === 'admin') {
-        const { error } = await supabase
-          .from('user_roles')
-          .delete()
-          .eq('user_id', userId)
-          .eq('role', 'admin')
-
-        if (error) throw error
-        alert('ยกเลิกสิทธิ์ Admin สำเร็จ')
-      } else {
-        const { error } = await supabase
-          .from('user_roles')
-          .insert([{ user_id: userId, role: 'admin' }])
-
-        if (error) throw error
-        alert('กำหนดสิทธิ์ Admin สำเร็จ')
-      }
+      if (!res.ok) throw new Error('Failed to delete user')
       
+      alert('ลบผู้ใช้สำเร็จ')
       fetchUsers()
-    } catch (error: any) {
-      console.error('Error toggling admin role:', error)
-      alert('ดำเนินการไม่สำเร็จ: ' + error.message)
+    } catch (err) {
+      alert('เกิดข้อผิดพลาด: ' + (err as Error).message)
     }
-  }
-
-  const resetForm = () => {
-    setFormData({
-      email: '',
-      password: ''
-    })
-    setShowForm(false)
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
     router.push('/login')
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">
-              จัดการผู้ใช้งาน
-            </h1>
-            <Link 
-              href="/admin/vehicles" 
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              ← กลับไปจัดการรถ
-            </Link>
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">
+              ← กลับ
+            </button>
+            <h1 className="text-xl font-bold text-gray-800">จัดการผู้ใช้งาน</h1>
           </div>
-          <button
-            onClick={handleLogout}
-            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
-          >
-            ออกจากระบบ
+          <button onClick={handleLogout} className="text-red-600 hover:text-red-700 text-sm font-medium">
+            Logout
           </button>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700"
+      <main className="max-w-5xl mx-auto px-4 py-6">
+        <div className="mb-6 flex justify-between items-center">
+          <p className="text-sm text-gray-600">จัดการบัญชีผู้ใช้งานระบบ</p>
+          <button 
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
           >
-            {showForm ? 'ยกเลิก' : '+ สร้างผู้ใช้งานใหม่'}
+            {showAddForm ? '✕ ยกเลิก' : '+ เพิ่มผู้ใช้'}
           </button>
         </div>
 
-        {showForm && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-bold mb-4">สร้างผู้ใช้งานใหม่</h2>
-            <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+        {showAddForm && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">เพิ่มผู้ใช้งานใหม่</h2>
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  อีเมล *
-                </label>
-                <input
+                <label className="block text-sm font-medium text-gray-700 mb-1">อีเมล</label>
+                <input 
                   type="email"
-                  required
-                  value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  placeholder="user@company.com"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  รหัสผ่าน *
-                </label>
-                <input
+                <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน</label>
+                <input 
                   type="password"
-                  required
-                  minLength={6}
-                  value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  placeholder="ขั้นต่ำ 6 ตัวอักษร"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700"
-                >
-                  สร้างผู้ใช้งาน
-                </button>
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="bg-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-400"
-                >
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowAddForm(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
                   ยกเลิก
                 </button>
+                <button onClick={handleAddUser} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+                  สร้างผู้ใช้
+                </button>
               </div>
-            </form>
+            </div>
           </div>
         )}
 
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-800">รายการผู้ใช้งาน ({users.length})</h2>
+          </div>
+          
           {loading ? (
-            <div className="p-8 text-center">กำลังโหลดข้อมูล...</div>
+            <div className="p-8 text-center text-gray-500">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              กำลังโหลดข้อมูล...
+            </div>
+          ) : users.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              <div className="text-4xl mb-2">👥</div>
+              <p>ยังไม่มีผู้ใช้งานในระบบ</p>
+            </div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    อีเมล
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    บทบาท
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    สร้างเมื่อ
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                    จัดการ
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {users.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
-                      ยังไม่มีผู้ใช้งาน
-                    </td>
-                  </tr>
-                ) : (
-                  users.map((user) => (
-                    <tr key={user.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-900">
-                        {user.email}
-                        {user.email === currentUserEmail && (
-                          <span className="ml-2 text-xs text-blue-600">(คุณ)</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          user.role === 'admin' 
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {user.role === 'admin' ? 'Admin' : 'User'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-sm">
-                        {new Date(user.created_at).toLocaleDateString('th-TH')}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
-                        <button
-                          onClick={() => handleToggleAdmin(user.id, user.role || 'user')}
-                          className={`text-sm px-3 py-1 rounded ${
-                            user.role === 'admin'
-                              ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                              : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
-                          }`}
-                        >
-                          {user.role === 'admin' ? 'ยกเลิก Admin' : 'ตั้งเป็น Admin'}
-                        </button>
-                        
-                        {user.email !== currentUserEmail && (
-                          <button
-                            onClick={() => handleDelete(user.id, user.email)}
-                            className="text-sm text-red-600 hover:text-red-900"
-                          >
-                            ลบ
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <div className="divide-y divide-gray-200">
+              {users.map((user) => (
+                <div key={user.id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <span className="text-blue-600 font-semibold">{user.email.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800">{user.email}</p>
+                      <p className="text-xs text-gray-500">
+                        สร้างเมื่อ: {new Date(user.created_at).toLocaleDateString('th-TH')}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleDeleteUser(user.id, user.email)}
+                    className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    🗑️ ลบ
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-blue-900 mb-2">💡 คำแนะนำ:</h3>
-          <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-            <li>ผู้ใช้งานใหม่จะสามารถเข้าสู่ระบบได้ทันทีด้วยอีเมลและรหัสผ่านที่กำหนด</li>
-            <li>ผู้ใช้งานทั่วไปจะเห็นเฉพาะหน้า Dashboard (Monitor View)</li>
-            <li>Admin สามารถเข้าถึงหน้าจัดการข้อมูลรถและจัดการผู้ใช้งานได้</li>
-            <li>คุณไม่สามารถลบบัญชีตัวเองได้</li>
-          </ul>
+        <div className="mt-6 flex gap-3">
+          <Link href="/admin/tracking" className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+            📧 Manual E-Mail
+          </Link>
+          <Link href="/admin/vehicles" className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+            🚗 จัดการข้อมูลรถ
+          </Link>
+          <Link href="/dashboard" className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+            📊 Dashboard
+          </Link>
         </div>
       </main>
     </div>
