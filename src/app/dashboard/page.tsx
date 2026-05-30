@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 
 interface Vehicle {
   id?: string
@@ -19,31 +18,21 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   
-  // --- States ---
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
-  
-  // ETA Calculator States
   const [distance, setDistance] = useState('')
   const [etaResult, setEtaResult] = useState('')
   const [arrivalTime, setArrivalTime] = useState('')
-  
-  // Search States
   const [searchTerm, setSearchTerm] = useState('')
-  
-  // Add Vehicle States
   const [newVehicle, setNewVehicle] = useState({
     licensePlate: '',
     companyName: '',
     gpsName: '',
     gpsLink: ''
   })
-  
-  // Toggle States
   const [showAllVehicles, setShowAllVehicles] = useState(false)
   const [showAddVehicle, setShowAddVehicle] = useState(false)
 
-  // --- Effects ---
   useEffect(() => {
     fetchVehicles()
   }, [])
@@ -57,7 +46,19 @@ export default function DashboardPage() {
         .order('created_at', { ascending: false })
       
       if (error) throw error
-      setVehicles(data || [])
+      
+      // ✅ แก้ไข: Map ข้อมูลจาก snake_case เป็น camelCase
+      const mappedData = (data || []).map((v: any) => ({
+        id: v.id,
+        licensePlate: v.license_plate || '',
+        companyName: v.company_name || '',
+        gpsName: v.gps_name || '',
+        gpsLink: v.gps_link || '',
+        status: v.status || 'Active',
+        notes: v.notes
+      }))
+      
+      setVehicles(mappedData)
     } catch (err) {
       console.error('Error fetching vehicles:', err)
     } finally {
@@ -65,7 +66,6 @@ export default function DashboardPage() {
     }
   }
 
-  // --- ETA Calculator ---
   const calculateETA = () => {
     const dist = parseFloat(distance)
     if (isNaN(dist) || dist <= 0) {
@@ -73,17 +73,12 @@ export default function DashboardPage() {
       return
     }
 
-    // สูตร: ระยะทาง / 58
     const hoursRaw = dist / 58
-    
-    // ปัดเศษ: < 0.5 ปัดลง, >= 0.5 ปัดขึ้น
     const hours = Math.round(hoursRaw)
     
-    // คำนวณเวลาถึง
     const now = new Date()
     const arrival = new Date(now.getTime() + hours * 60 * 60 * 1000)
     
-    // Format เวลาไทย
     const formatDate = (date: Date) => {
       const day = date.getDate()
       const month = date.getMonth() + 1
@@ -97,7 +92,6 @@ export default function DashboardPage() {
     setArrivalTime(formatDate(arrival))
   }
 
-  // ✅ แก้ไขส่วนนี้: เพิ่ม optional chaining (?)
   const filteredVehicles = useMemo(() => {
     if (!searchTerm.trim()) return []
     return vehicles.filter(v => 
@@ -105,7 +99,6 @@ export default function DashboardPage() {
     ).slice(0, 5)
   }, [searchTerm, vehicles])
 
-  // --- Add Vehicle ---
   const handleAddVehicle = async () => {
     if (!newVehicle.licensePlate || !newVehicle.companyName) {
       alert('กรุณากรอกทะเบียนรถและชื่อบริษัท')
@@ -141,7 +134,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -165,7 +157,7 @@ export default function DashboardPage() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-4">
         
-        {/* ✅ ส่วนที่ 1: คำนวณ ETA */}
+        {/* ส่วนที่ 1: คำนวณ ETA */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-2 mb-4">
             <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,7 +215,7 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* ✅ ส่วนที่ 2: ค้นหาทะเบียนรถ */}
+        {/* ส่วนที่ 2: ค้นหาทะเบียนรถ */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">
             ค้นหาทะเบียนรถ (พิมพ์เฉพาะตัวเลข)
@@ -243,7 +235,6 @@ export default function DashboardPage() {
             />
           </div>
           
-          {/* ผลการค้นหา */}
           {filteredVehicles.length > 0 && (
             <div className="mt-3 space-y-2">
               {filteredVehicles.map((vehicle) => (
@@ -266,9 +257,15 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+          
+          {searchTerm && filteredVehicles.length === 0 && (
+            <div className="mt-3 p-3 text-center text-gray-500 text-sm">
+              ไม่พบข้อมูลรถที่ค้นหา
+            </div>
+          )}
         </section>
 
-        {/* ✅ ส่วนที่ 3: เพิ่มข้อมูลรถ */}
+        {/* ส่วนที่ 3: เพิ่มข้อมูลรถ */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-bold text-gray-800">เพิ่มข้อมูลรถ</h2>
@@ -328,7 +325,7 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* ✅ ส่วนที่ 4: รายการรถทั้งหมด (Toggle) */}
+        {/* ส่วนที่ 4: รายการรถทั้งหมด */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex justify-between items-center mb-4">
             <button 
