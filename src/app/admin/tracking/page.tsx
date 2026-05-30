@@ -108,6 +108,7 @@ export default function TrackingPage() {
     } catch (err) { console.error('Vehicle fetch error:', err) }
   }
 
+  // ✅ แก้ไขฟังก์ชันนี้เพื่อตัดคำที่ไม่ต้องการออก
   const fetchLocationFromCoords = useCallback(async (index: number, latLng: string) => {
     const coords = latLng.split(',').map(c => c.trim())
     if (coords.length !== 2 || isNaN(Number(coords[0])) || isNaN(Number(coords[1]))) return
@@ -121,14 +122,26 @@ export default function TrackingPage() {
       const data = await res.json()
       const addr = data.address || {}
 
-      // ✅ แก้ไขใหม่: ดึงเฉพาะ อำเภอ (District) และ จังหวัด (Province)
-      const district = addr.county || addr.city_district || ''
-      const province = addr.state || ''
+      // ✅ 1. ดึงชื่ออำเภอ (District) โดยให้ความสำคัญกับ 'city' ก่อน
+      let rawDistrict = addr.city || addr.town || addr.municipality || addr.county || ''
+      
+      // ✅ 2. ดึงชื่อจังหวัด (Province)
+      let rawProvince = addr.state || ''
 
+      // ✅ 3. ตัดคำที่ไม่ต้องการออก
+      const unwantedWords = ['Subdistrict', 'Administrative', 'Organization', 'Municipality', 'Province', 'Changwat']
+      
+      unwantedWords.forEach(word => {
+        // ตัดคำออกทั้งในอำเภอและจังหวัด
+        rawDistrict = rawDistrict.replace(new RegExp(`\\s*${word}\\s*`, 'gi'), ' ').trim()
+        rawProvince = rawProvince.replace(new RegExp(`\\s*${word}\\s*`, 'gi'), ' ').trim()
+      })
+
+      // ✅ 4. จัดรูปแบบ
       let location = ''
-      if (district && province) location = `${district}, ${province}`
-      else if (district) location = district
-      else if (province) location = province
+      if (rawDistrict && rawProvince) location = `${rawDistrict}, ${rawProvince}`
+      else if (rawDistrict) location = rawDistrict
+      else if (rawProvince) location = rawProvince
       else location = data.display_name?.split(',')[0] || ''
 
       setTrips(prev => {
@@ -290,7 +303,7 @@ export default function TrackingPage() {
       <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-3 py-2 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-gray-800">📧 Manual E-Mail</h1>
+            <h1 className="text-lg font-bold text-gray-800"> Manual E-Mail</h1>
             <Link href="/admin/vehicles" className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-200"> จัดการข้อมูลรถ</Link>
           </div>
           <button onClick={handleLogout} className="bg-red-500 text-white text-xs px-3 py-1.5 rounded hover:bg-red-600">ออกจากระบบ</button>
@@ -298,6 +311,7 @@ export default function TrackingPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-3 py-3 space-y-3">
+        {/* ✅ แก้ไข Warning: เปลี่ยนจาก bg-gradient-to-r เป็น bg-linear-to-r */}
         <div className="bg-linear-to-r from-blue-500 to-blue-600 p-3 rounded-lg shadow-md">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-1">
@@ -380,7 +394,7 @@ export default function TrackingPage() {
                       <span className="text-[10px] bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">{group.indices.length} คัน</span>
                     </div>
                     <div className="flex gap-1">
-                      <button onClick={() => moveGroup(gIdx, -1)} disabled={gIdx === 0} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">⬆️</button>
+                      <button onClick={() => moveGroup(gIdx, -1)} disabled={gIdx === 0} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">️</button>
                       <button onClick={() => moveGroup(gIdx, 1)} disabled={gIdx === groups.length - 1} className="p-1 bg-white border border-blue-300 rounded text-xs hover:bg-blue-50 disabled:opacity-30">⬇️</button>
                     </div>
                   </div>
