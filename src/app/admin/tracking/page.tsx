@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
+import Navigation from '@/components/Navigation'
 import Link from 'next/link'
 
-// --- Interfaces ---
 interface TripBlock {
   id?: string
   workDate: string
@@ -21,12 +21,10 @@ interface TripBlock {
   eta: string
   arrivalTime: string
   updatedAt: string
-  // ✅ รองรับสถานะใหม่: cancelled (ยกเลิก), postponed (เลื่อนงาน)
   statusColor: 'default' | 'ovn' | 'wait' | 'cancelled' | 'postponed'
   isNew?: boolean
 }
 
-// --- Constants for Sidebar ---
 const TEXT_SNIPPETS = [
   "Reached, ICD Savannakhet",
   "Reached, Bukit Kayu Hitam, Kedah, Malaysia",
@@ -46,7 +44,6 @@ export default function TrackingPage() {
   const supabase = createClient()
   const router = useRouter()
   
-  // --- States ---
   const [allTrips, setAllTrips] = useState<TripBlock[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
@@ -55,15 +52,10 @@ export default function TrackingPage() {
   const [isMergeMode, setIsMergeMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [copiedText, setCopiedText] = useState<string | null>(null)
-  
-  // ✅ State สำหรับ Drag & Drop
   const [dragItem, setDragItem] = useState<number | null>(null)
   const [dragOverItem, setDragOverItem] = useState<number | null>(null)
-  
-  // ✅ State สำหรับตัวกรองงานยกเลิก
   const [hideCancelled, setHideCancelled] = useState(false)
 
-  // --- Effects ---
   useEffect(() => { fetchAllTrips() }, [])
 
   const copyToClipboard = (text: string) => {
@@ -182,7 +174,6 @@ export default function TrackingPage() {
     setAllTrips(prev => { const n = [...prev]; n.forEach(t => { if (t.groupName === groupName) t.groupName = '' }); return n })
   }
 
-  // ✅ ฟังก์ชันจัดการสถานะ (ยกเลิก / เลื่อนงาน)
   const setStatus = (index: number, status: TripBlock['statusColor']) => {
     if (status === 'cancelled' && !confirm('ต้องการยกเลิกงานนี้ใช่หรือไม่?')) return
     setAllTrips(prev => {
@@ -192,30 +183,19 @@ export default function TrackingPage() {
     })
   }
 
-  // ✅ Drag & Drop Logic
-  const handleDragStart = (index: number) => {
-    setDragItem(index)
-  }
-  
-  const handleDragEnter = (index: number) => {
-    setDragOverItem(index)
-  }
-  
+  const handleDragStart = (index: number) => { setDragItem(index) }
+  const handleDragEnter = (index: number) => { setDragOverItem(index) }
   const handleDrop = () => {
     if (dragItem === null || dragOverItem === null || dragItem === dragOverItem) return
-    
     const copyList = [...allTrips]
-    // ใช้ splice เพื่อลบและแทรกในตำแหน่งใหม่
     const draggedItemContent = copyList.splice(dragItem, 1)[0]
     copyList.splice(dragOverItem, 0, draggedItemContent)
-    
     setAllTrips(copyList)
     setDragItem(null)
     setDragOverItem(null)
   }
 
   const currentDayTrips = useMemo(() => {
-    // กรองงานที่ยกเลิกออกถ้าเปิดโหมดซ่อน
     const visibleTrips = hideCancelled 
       ? allTrips.filter(t => t.workDate === selectedDate && t.statusColor !== 'cancelled')
       : allTrips.filter(t => t.workDate === selectedDate)
@@ -256,7 +236,7 @@ export default function TrackingPage() {
       eta_hours: parseFloat(trip.eta) || null, 
       arrival_time: trip.arrivalTime, 
       updated_at: trip.updatedAt, 
-      status_color: trip.statusColor, // ✅ บันทึกสถานะ
+      status_color: trip.statusColor, 
       sort_order: index 
     }
     let error, savedId = trip.id
@@ -268,7 +248,6 @@ export default function TrackingPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login') }
 
-  // --- Render: Calendar ---
   const renderCalendar = () => {
     if (!showCalendar) return null
     const today = new Date()
@@ -297,84 +276,46 @@ export default function TrackingPage() {
     )
   }
 
-  // --- Render: List View ---
   if (viewMode === 'list') {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
         {renderCalendar()}
-        <div className="max-w-2xl mx-auto flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4">
+        <div className="max-w-2xl mx-auto px-4 py-8">
+          <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold text-gray-800">Manual E-Mail</h1>
-            {/* ✅ ปุ่มกลับไปหน้า Dashboard */}
-            <Link href="/dashboard" className="text-sm bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-100 flex items-center gap-1">
-               📊 Dashboard
-            </Link>
+            <button onClick={() => setShowCalendar(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 font-medium flex items-center gap-2">+ เพิ่ม</button>
           </div>
-          <div className="flex gap-2">
-             <button onClick={() => setShowCalendar(true)} className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 text-gray-600 hover:bg-gray-50"></button>
-             <button onClick={() => handleSelectDate(new Date().toISOString().split('T')[0])} className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 font-medium flex items-center gap-2">+ เพิ่ม</button>
+          <div className="space-y-3">
+            {loading ? <div className="text-center py-10 text-gray-500">กำลังโหลด...</div> : uniqueDates.length === 0 ? (
+              <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-gray-100"><div className="text-4xl mb-2">📅</div><p className="text-gray-500">ยังไม่มีงาน</p><button onClick={() => setShowCalendar(true)} className="mt-4 text-blue-600 hover:underline text-sm">เลือกวันที่เพื่อเริ่มงาน</button></div>
+            ) : (
+              uniqueDates.map(({ date, count }) => (
+                <div key={date} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleSelectDate(date)}>
+                  <div className="flex items-center gap-4">
+                    <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+                    <div><div className="font-bold text-gray-800 text-lg">{date.split('-').reverse().join('/')}</div><div className="text-sm text-gray-500">{count} บล็อก</div></div>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => deleteDate(date)} className="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                    <div className="text-gray-400">›</div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        </div>
-        <div className="max-w-2xl mx-auto space-y-3">
-          {loading ? <div className="text-center py-10 text-gray-500">กำลังโหลด...</div> : uniqueDates.length === 0 ? (
-            <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-gray-100"><div className="text-4xl mb-2">📅</div><p className="text-gray-500">ยังไม่มีงาน</p><button onClick={() => setShowCalendar(true)} className="mt-4 text-blue-600 hover:underline text-sm">เลือกวันที่เพื่อเริ่มงาน</button></div>
-          ) : (
-            uniqueDates.map(({ date, count }) => (
-              <div key={date} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleSelectDate(date)}>
-                <div className="flex items-center gap-4">
-                  <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
-                  <div><div className="font-bold text-gray-800 text-lg">{date.split('-').reverse().join('/')}</div><div className="text-sm text-gray-500">{count} บล็อก</div></div>
-                </div>
-                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => deleteDate(date)} className="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                  <div className="text-gray-400">›</div>
-                </div>
-              </div>
-            ))
-          )}
         </div>
       </div>
     )
   }
 
-  // --- Render: Detail View ---
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
+      <Navigation />
       {renderCalendar()}
       
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-30">
-        <div className="max-w-full mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setViewMode('list')} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← กลับ</button>
-            <h1 className="text-xl font-bold text-gray-800">Manual E-Mail <span className="text-sm font-normal text-gray-500 ml-2">({selectedDate.split('-').reverse().join('/')})</span></h1>
-          </div>
-          <div className="flex items-center gap-2">
-             {/* ✅ ปุ่มซ่อนงานยกเลิก */}
-            <button 
-              onClick={() => setHideCancelled(!hideCancelled)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                hideCancelled ? 'bg-gray-100 border-gray-300 text-gray-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {hideCancelled ? '️ แสดงงานยกเลิก' : '🙈 ซ่อนงานยกเลิก'}
-            </button>
-            
-            {/* ✅ ปุ่มกลับไปหน้า Dashboard */}
-            <Link href="/dashboard" className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-200 mx-2">
-               📊 Dashboard
-            </Link>
-
-            <button onClick={handleLogout} className="bg-red-500 text-white text-xs px-4 py-2 rounded-lg hover:bg-red-600">ออกจากระบบ</button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Layout */}
       <div className="flex flex-1">
-        
-        {/* Left Sidebar */}
-        <aside className="hidden lg:block w-64 p-4 sticky top-20 self-start">
+        <aside className="hidden lg:block w-64 p-4 sticky top-16 self-start">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">Text Snippets</h3>
             <div className="space-y-2">
@@ -388,7 +329,6 @@ export default function TrackingPage() {
           </div>
         </aside>
 
-        {/* Center Content */}
         <main className="flex-1 p-4 pb-24">
           <div className="max-w-4xl mx-auto space-y-4">
             {currentDayTrips.length === 0 && !allTrips.some(t => t.workDate === selectedDate && t.isNew) ? (
@@ -415,11 +355,9 @@ export default function TrackingPage() {
                                   : trip.statusColor === 'postponed' ? '#FFF3E0' 
                                   : trip.statusColor === 'cancelled' ? '#F9FAFB' 
                                   : '#ffffff'
-                        
                         const isCancelled = trip.statusColor === 'cancelled'
 
                         return (
-                          // ✅ เพิ่ม Draggable Props
                           <div 
                             key={trip.id || `temp-${idx}`} 
                             className="p-4 transition-colors relative" 
@@ -430,18 +368,15 @@ export default function TrackingPage() {
                             onDragEnd={handleDrop}
                             onDragOver={(e) => e.preventDefault()}
                           >
-                            {/* ✅ เส้นขีดฆ่าถ้ายกเลิก */}
                             {isCancelled && <div className="absolute inset-0 bg-white/40 pointer-events-none flex items-center justify-center z-10"><span className="bg-red-100 text-red-600 px-3 py-1 rounded font-bold transform -rotate-12 border border-red-200">ยกเลิก</span></div>}
                             
                             <div className={`flex justify-between items-center mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
                               <div className="flex items-center gap-2">
-                                {/* ✅ ปุ่ม Drag Handle (จุด 6 จุด) */}
                                 <button className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1">
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                                   </svg>
                                 </button>
-
                                 {isMergeMode && <input type="checkbox" checked={!!trip.id && selectedIds.includes(trip.id)} onChange={() => toggleSelect(trip.id)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" />}
                                 <span className="text-xs text-gray-400">{isStandalone ? 'งานเดี่ยว' : `คันที่ ${group.indices.indexOf(idx) + 1} ในกลุ่ม`}</span>
                               </div>
@@ -479,8 +414,6 @@ export default function TrackingPage() {
                             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
                               <button onClick={() => setStatus(idx, 'ovn')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'ovn' ? 'bg-[#00FFFF] border-[#00cccc] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>OVN</button>
                               <button onClick={() => setStatus(idx, 'wait')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>Wait</button>
-                              
-                              {/* ✅ ปุ่มเลื่อนงานและยกเลิก */}
                               <button onClick={() => setStatus(idx, 'postponed')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'postponed' ? 'bg-orange-100 border-orange-300 text-orange-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>⏳ เลื่อนงาน</button>
                               <button onClick={() => setStatus(idx, 'cancelled')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'cancelled' ? 'bg-red-100 border-red-300 text-red-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>❌ ยกเลิก</button>
                               
@@ -499,8 +432,7 @@ export default function TrackingPage() {
           </div>
         </main>
 
-        {/* Right Sidebar */}
-        <aside className="hidden lg:block w-72 p-4 sticky top-20 self-start">
+        <aside className="hidden lg:block w-72 p-4 sticky top-16 self-start">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">Location Presets</h3>
             <div className="space-y-3">
@@ -508,7 +440,7 @@ export default function TrackingPage() {
                 <div key={i} className="group bg-gray-50 border border-gray-200 rounded-lg p-3 hover:shadow-md transition-all">
                   <div className="flex justify-between items-start mb-1">
                     <p className="text-sm font-medium text-gray-800 flex-1 pr-2">{preset.name}</p>
-                    <button onClick={() => copyToClipboard(preset.name)} className="text-gray-400 hover:text-blue-500 transition-colors"></button>
+                    <button onClick={() => copyToClipboard(preset.name)} className="text-gray-400 hover:text-blue-500 transition-colors">📋</button>
                   </div>
                   <div className="flex justify-between items-center">
                     <p className="text-xs text-gray-500 font-mono">{preset.latLng}</p>
@@ -521,7 +453,6 @@ export default function TrackingPage() {
         </aside>
       </div>
 
-      {/* Floating Buttons */}
       <div className="fixed bottom-6 right-6 flex items-center gap-3 z-30">
         <button onClick={handleMerge} className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-lg font-medium transition-all hover:scale-105 active:scale-95 ${isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'}`}>
           {isMergeMode ? '✅ ยืนยันการรวม' : ' รวม'}

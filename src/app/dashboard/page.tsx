@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
+import Navigation from '@/components/Navigation'  // ✅ เพิ่มบรรทัดนี้
 
 interface Vehicle {
   id?: string
@@ -47,7 +48,6 @@ export default function DashboardPage() {
       
       if (error) throw error
       
-      // ✅ แก้ไข: Map ข้อมูลจาก snake_case เป็น camelCase
       const mappedData = (data || []).map((v: any) => ({
         id: v.id,
         licensePlate: v.license_plate || '',
@@ -134,27 +134,8 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🚛</span>
-            <h1 className="text-xl font-bold text-gray-800">Logistics Monitor</h1>
-            <button 
-              onClick={() => router.push('/admin/tracking')}
-              className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border border-blue-200 hover:bg-blue-100"
-            >
-              Admin Mode
-            </button>
-          </div>
-          <button 
-            onClick={handleLogout}
-            className="text-red-600 hover:text-red-700 text-sm font-medium"
-          >
-            Logout
-          </button>
-        </div>
-      </header>
-
+      <Navigation />  {/* ✅ เพิ่มบรรทัดนี้ (ใต้ div ตัวแรก) */}
+      
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-4">
         
         {/* ส่วนที่ 1: คำนวณ ETA */}
