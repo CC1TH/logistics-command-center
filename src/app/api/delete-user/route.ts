@@ -1,27 +1,19 @@
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { createClient } from '@/lib/supabaseClient'
 
 export async function DELETE(request: Request) {
+  const supabase = createClient()
+  
   try {
     const { userId } = await request.json()
+    
+    const { error } = await supabase.auth.admin.deleteUser(userId)
+    
+    if (error) throw error
 
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
-
-    if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { success: true },
-      { status: 200 }
-    )
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting user:', error)
+    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
   }
 }
