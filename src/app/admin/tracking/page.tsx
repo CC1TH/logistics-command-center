@@ -205,11 +205,8 @@ export default function TrackingPage() {
     if (dragItem === null || dragOverItem === null || dragItem === dragOverItem) return
     
     const copyList = [...allTrips]
-    const draggedItemContent = copyList[dragItem]
-    
-    // ลบตัวที่ลากออก
-    copyList.splice(dragItem, 1)
-    // แทรกเข้าไปในตำแหน่งใหม่
+    // ใช้ splice เพื่อลบและแทรกในตำแหน่งใหม่
+    const draggedItemContent = copyList.splice(dragItem, 1)[0]
     copyList.splice(dragOverItem, 0, draggedItemContent)
     
     setAllTrips(copyList)
@@ -306,7 +303,13 @@ export default function TrackingPage() {
       <div className="min-h-screen bg-gray-50 p-4">
         {renderCalendar()}
         <div className="max-w-2xl mx-auto flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">Manual E-Mail</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-gray-800">Manual E-Mail</h1>
+            {/* ✅ ปุ่มกลับไปหน้า Dashboard */}
+            <Link href="/dashboard" className="text-sm bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+               📊 Dashboard
+            </Link>
+          </div>
           <div className="flex gap-2">
              <button onClick={() => setShowCalendar(true)} className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 text-gray-600 hover:bg-gray-50"></button>
              <button onClick={() => handleSelectDate(new Date().toISOString().split('T')[0])} className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 font-medium flex items-center gap-2">+ เพิ่ม</button>
@@ -350,12 +353,18 @@ export default function TrackingPage() {
              {/* ✅ ปุ่มซ่อนงานยกเลิก */}
             <button 
               onClick={() => setHideCancelled(!hideCancelled)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-all mr-2 ${
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
                 hideCancelled ? 'bg-gray-100 border-gray-300 text-gray-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
               }`}
             >
               {hideCancelled ? '️ แสดงงานยกเลิก' : '🙈 ซ่อนงานยกเลิก'}
             </button>
+            
+            {/* ✅ ปุ่มกลับไปหน้า Dashboard */}
+            <Link href="/dashboard" className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-200 mx-2">
+               📊 Dashboard
+            </Link>
+
             <button onClick={handleLogout} className="bg-red-500 text-white text-xs px-4 py-2 rounded-lg hover:bg-red-600">ออกจากระบบ</button>
           </div>
         </div>
@@ -419,6 +428,7 @@ export default function TrackingPage() {
                             onDragStart={() => handleDragStart(idx)}
                             onDragEnter={() => handleDragEnter(idx)}
                             onDragEnd={handleDrop}
+                            onDragOver={(e) => e.preventDefault()}
                           >
                             {/* ✅ เส้นขีดฆ่าถ้ายกเลิก */}
                             {isCancelled && <div className="absolute inset-0 bg-white/40 pointer-events-none flex items-center justify-center z-10"><span className="bg-red-100 text-red-600 px-3 py-1 rounded font-bold transform -rotate-12 border border-red-200">ยกเลิก</span></div>}
