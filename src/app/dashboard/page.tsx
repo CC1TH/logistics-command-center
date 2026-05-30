@@ -97,12 +97,12 @@ export default function DashboardPage() {
     setArrivalTime(formatDate(arrival))
   }
 
-  // --- Search Vehicles ---
+  // ✅ แก้ไขส่วนนี้: เพิ่ม optional chaining (?)
   const filteredVehicles = useMemo(() => {
     if (!searchTerm.trim()) return []
     return vehicles.filter(v => 
-      v.licensePlate.toLowerCase().includes(searchTerm.toLowerCase())
-    ).slice(0, 5) // แสดงแค่ 5 ผลลัพธ์แรก
+      v.licensePlate?.toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, 5)
   }, [searchTerm, vehicles])
 
   // --- Add Vehicle ---
