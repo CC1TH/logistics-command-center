@@ -50,33 +50,37 @@ export default function OverNightSummaryPage() {
     setSortedDates(dates)
   }, [router])
 
-  // ✅ ฟังก์ชันคัดลอกข้อมูลทั้งหมด
+  // ✅ ฟังก์ชันคัดลอกข้อมูลทั้งหมด (รูปแบบใหม่ตามที่ต้องการ)
   const handleCopyAll = () => {
-    const allData: string[][] = []
+    let output = ''
     
-    // เพิ่ม Header
-    allData.push(['Booking', 'Truck', 'Cont No.', 'Shipment', 'Remarks', 'P/U Date'])
-    
-    // เพิ่มข้อมูลแต่ละแถว
+    // วนลูปแต่ละวันที่
     sortedDates.forEach(date => {
-      groupedData[date].forEach(row => {
-        allData.push([
+      const rows = groupedData[date]
+      
+      // เพิ่มวันที่
+      output += `${date}\n`
+      
+      // เพิ่มข้อมูลแต่ละแถวในรูปแบบ: Booking // Truck // Cont No. // Shipment // Remarks
+      rows.forEach(row => {
+        const line = [
           row.booking,
           row.truck,
           row.contNo,
           row.shipment,
-          row.remarks,
-          date
-        ])
+          row.remarks
+        ].join(' // ')
+        
+        output += `${line}\n`
       })
+      
+      // เว้นบรรทัดว่างระหว่างวัน
+      output += '\n'
     })
     
-    // แปลงเป็น CSV format (Tab-separated)
-    const textData = allData.map(row => row.join('\t')).join('\n')
-    
     // คัดลอกไปยัง Clipboard
-    navigator.clipboard.writeText(textData).then(() => {
-      alert('คัดลอกข้อมูลทั้งหมดสำเร็จ! สามารถวางใน Excel หรือ Google Sheets ได้เลย')
+    navigator.clipboard.writeText(output).then(() => {
+      alert('คัดลอกข้อมูลทั้งหมดสำเร็จ! สามารถวางใน Notepad, Excel หรือ Google Sheets ได้เลย')
     }).catch(err => {
       console.error('Failed to copy:', err)
       alert('เกิดข้อผิดพลาดในการคัดลอก')
