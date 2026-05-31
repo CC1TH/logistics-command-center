@@ -55,7 +55,6 @@ export default function TrackingPage() {
   const [dragOverItem, setDragOverItem] = useState<number | null>(null)
   const [hideCancelled, setHideCancelled] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
-  const [lastFetchTime, setLastFetchTime] = useState<number>(0)
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -63,15 +62,11 @@ export default function TrackingPage() {
     setTimeout(() => setCopiedText(null), 2000)
   }
 
-  // ✅ โหลดข้อมูลจาก Database (เรียกแค่ครั้งเดียวตอนเปิดหน้า)
-  const fetchAllTrips = useCallback(async (forceRefresh = false) => {
-    const now = Date.now()
-    
-    // ✅ ป้องกันการ fetch บ่อยเกินไป (debounce 2 วินาที)
-    if (!forceRefresh && now - lastFetchTime < 2000) {
-      return
-    }
-    
+  useEffect(() => {
+    fetchAllTrips()
+  }, [])
+
+  const fetchAllTrips = async () => {
     setLoading(true)
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -87,10 +82,7 @@ export default function TrackingPage() {
         .order('work_date', { ascending: false })
         .limit(500)
       
-      if (error) {
-        console.error('Fetch error:', error)
-        throw error
-      }
+      if (error) throw error
       
       const mapped: TripBlock[] = (data || []).map((t: any) => ({
         id: t.id,
@@ -112,36 +104,12 @@ export default function TrackingPage() {
       }))
       
       setAllTrips(mapped)
-      setLastFetchTime(now)
     } catch (err) { 
       console.error('Error fetching trips:', err)
     } finally { 
       setLoading(false) 
     }
-  }, [lastFetchTime, router, supabase.auth])
-
-  // ✅ ตั้งค่า Real-time subscription (เรียกครั้งเดียว)
-  useEffect(() => {
-    fetchAllTrips(true) // Force refresh ครั้งแรก
-    
-    const channel = supabase
-      .channel('trip_logs_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'trip_logs' },
-        (payload) => {
-          console.log('Real-time change:', payload)
-          // ✅ Debounce: รอ 500ms ก่อน refresh
-          setTimeout(() => {
-            fetchAllTrips(true)
-          }, 500)
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, []) // ✅ Empty dependency array = เรียกครั้งเดียวตอน mount
+  }
 
   const uniqueDates = useMemo(() => {
     const dates = new Map<string, number>()
@@ -163,7 +131,7 @@ export default function TrackingPage() {
     if (!confirm(`ลบงานวันที่ ${date}?`)) return
     try {
       await supabase.from('trip_logs').delete().eq('work_date', date)
-      await fetchAllTrips(true)
+      fetchAllTrips()
     } catch (err) {
       console.error('Error deleting date:', err)
       alert('ไม่สามารถลบได้')
@@ -177,7 +145,7 @@ export default function TrackingPage() {
       return
     }
     
-    setAllTrips(prev => [...prev, {
+    const newItem: TripBlock = {
       id: `temp-${Date.now()}`,
       workDate: selectedDate,
       groupName: '',
@@ -194,7 +162,9 @@ export default function TrackingPage() {
       updatedAt: '',
       statusColor: 'default',
       isNew: true
-    }])
+    }
+    
+    setAllTrips(prev => [newItem, ...prev])
   }
 
   const updateField = (index: number, field: keyof TripBlock, value: string) => {
@@ -396,7 +366,7 @@ export default function TrackingPage() {
         await supabase.from('trip_logs').delete().eq('id', trip.id)
       }
       setAllTrips(prev => prev.filter((_, i) => i !== index))
-      await fetchAllTrips(true)
+      fetchAllTrips()
     } catch (err) {
       console.error('Error deleting block:', err)
       alert('ไม่สามารถลบได้')
@@ -433,38 +403,29 @@ export default function TrackingPage() {
         sort_order: index
       }
       
-      let error, savedId = trip.id
-      
+      let res
       if (trip.isNew) {
-        const res = await supabase.from('trip_logs').insert([payload]).select()
-        error = res.error
-        if (!error && res.data?.[0]) savedId = res.data[0].id
+        res = await supabase.from('trip_logs').insert([payload]).select()
       } else {
-        const res = await supabase.from('trip_logs').update(payload).eq('id', trip.id!).select()
-        error = res.error
+        res = await supabase.from('trip_logs').update(payload).eq('id', trip.id!).select()
       }
       
-      if (error) {
-        console.error('Save error:', error)
-        alert('บันทึกไม่สำเร็จ: ' + error.message)
+      if (res.error) {
+        console.error('Save error:', res.error)
+        alert('บันทึกไม่สำเร็จ: ' + res.error.message)
         return
       }
       
-      // ✅ อัปเดต state ทันที (ไม่ต้องรอ fetch ใหม่)
       setAllTrips(prev => {
         const newArr = [...prev]
         newArr[index] = {
           ...newArr[index],
-          id: savedId || newArr[index].id,
-          isNew: false
+          id: res.data[0].id,
+          isNew: false,
+          updatedAt: res.data[0].updated_at
         }
         return newArr
       })
-      
-      // ✅ รอ 1 วินาทีแล้วค่อย refresh (prevent race condition)
-      setTimeout(async () => {
-        await fetchAllTrips(true)
-      }, 1000)
       
       alert('บันทึกสำเร็จ')
       
