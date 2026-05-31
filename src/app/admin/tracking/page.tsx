@@ -58,9 +58,7 @@ export default function TrackingPage() {
   // ✅ 1. โหลดข้อมูลเมื่อเปิดหน้า (ตรวจสอบ SessionStorage เพื่อป้องกันงานหาย)
   useEffect(() => {
     const init = async () => {
-      // ลองโหลดจาก SessionStorage ก่อน (ข้อมูลค้างในเครื่อง)
       const tempTrips = sessionStorage.getItem('temp-trips')
-      
       if (tempTrips) {
         try {
           setAllTrips(JSON.parse(tempTrips))
@@ -71,14 +69,12 @@ export default function TrackingPage() {
           console.error('Error parsing temp trips', e)
         }
       }
-
-      // ถ้าไม่มีข้อมูลค้าง ค่อยไปดึงจาก Database
       await fetchAllTrips()
     }
     init()
   }, [])
 
-  // ✅ 2. บันทึกข้อมูลลง SessionStorage ทุกครั้งที่มีการแก้ไข (ป้องกันงานหาย)
+  // ✅ 2. บันทึกข้อมูลลง SessionStorage ทุกครั้งที่มีการแก้ไข
   useEffect(() => {
     if (allTrips.length > 0) {
       sessionStorage.setItem('temp-trips', JSON.stringify(allTrips))
@@ -94,11 +90,8 @@ export default function TrackingPage() {
   const fetchAllTrips = async () => {
     setLoading(true)
     try {
-      // ✅ ตรวจสอบสิทธิ์ก่อนดึงข้อมูล (แก้ปัญหา Error 403/401)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
       if (userError || !user) {
-        console.error('Auth Error:', userError)
         await supabase.auth.signOut()
         router.push('/login')
         return
@@ -140,7 +133,6 @@ export default function TrackingPage() {
       }))
       
       setAllTrips(mapped)
-      // ล้าง SessionStorage เพราะข้อมูลตรงกับ DB แล้ว
       sessionStorage.removeItem('temp-trips')
     } catch (err) { 
       console.error('Error fetching trips:', err) 
@@ -152,9 +144,7 @@ export default function TrackingPage() {
   const uniqueDates = useMemo(() => {
     const dates = new Map<string, number>()
     allTrips.forEach(t => { 
-      if (t.workDate) {
-        dates.set(t.workDate, (dates.get(t.workDate) || 0) + 1)
-      }
+      if (t.workDate) dates.set(t.workDate, (dates.get(t.workDate) || 0) + 1)
     })
     return Array.from(dates.entries())
       .map(([date, count]) => ({ date, count }))
@@ -185,7 +175,6 @@ export default function TrackingPage() {
       setShowCalendar(true)
       return
     }
-
     setAllTrips(prev => [...prev, {
       id: `temp-${Date.now()}`,
       workDate: selectedDate,
@@ -237,47 +226,85 @@ export default function TrackingPage() {
     }
   }
 
+  // ✅ ฟังก์ชันดึงชื่อสถานที่จากพิกัด (แก้ไขแล้ว)
   const fetchLocationFromCoords = useCallback(async (index: number, latLng: string) => {
-    const coords = latLng.split(',').map(c => c.trim())
-    if (coords.length !== 2 || isNaN(Number(coords[0])) || isNaN(Number(coords[1]))) return
+    const cleanLatLng = latLng.trim()
+    const coords = cleanLatLng.split(',').map(c => c.trim())
     
+    console.log('📍 Parsing coords:', coords)
+    
+    if (coords.length !== 2) {
+      console.error('❌ Invalid format: ต้องมี 2 ค่าคั่นด้วย ,')
+      return
+    }
+    
+    const lat = parseFloat(coords[0])
+    const lng = parseFloat(coords[1])
+    
+    if (isNaN(lat) || isNaN(lng)) {
+      console.error('❌ Invalid numbers:', coords[0], coords[1])
+      return
+    }
+
     try {
-      const [lat, lng] = coords
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en&zoom=10`,
-        { headers: { 'User-Agent': 'LogisticsCommandCenter/1.0' } }
+        { 
+          headers: { 
+            'User-Agent': 'LogisticsCommandCenter/1.0',
+            'Accept': 'application/json'
+          } 
+        }
       )
+      
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+      
       const data = await res.json()
+      console.log(' Nominatim response:', data)
+      
       const addr = data.address || {}
       
-      let district = addr.county || addr.city_district || ''
-      let province = addr.state || ''
+      let district = addr.county || addr.city_district || addr.district || ''
+      let province = addr.state || addr.province || ''
       
       if (!district || !province) {
         const parts = (data.display_name || "").split(',').map((p: string) => p.trim())
         for (let i = parts.length - 1; i >= 0; i--) {
           const p = parts[i].toLowerCase()
-          if (p.includes('province') || p.includes('changwat') || p.includes('state')) {
-            province = parts[i].replace(/(province|changwat|state)/gi, '').trim()
+          if (p.includes('province') || p.includes('changwat') || p.includes('state') || p.includes('governorate')) {
+            province = parts[i].replace(/(province|changwat|state|governorate)/gi, '').trim()
             if (i > 0) district = parts[i-1]
             break
           }
         }
       }
       
-      const unwanted = ['Subdistrict', 'Tambon', 'Administrative', 'Organization', 'Municipality', 'District', 'Amphoe']
+      const unwanted = ['Subdistrict', 'Tambon', 'Administrative', 'Organization', 'Municipality', 'District', 'Amphoe', 'Khet']
       district = district.replace(new RegExp(unwanted.join('|'), 'gi'), '').trim()
-      province = province.replace(/(Province|Changwat|State)/gi, '').trim()
+      province = province.replace(/(Province|Changwat|State|Governorate)/gi, '').trim()
       
-      let location = (district && province) ? `${district}, ${province}` : (district || province || '')
+      let location = ''
+      if (district && province) {
+        location = `${district}, ${province}`
+      } else if (province) {
+        location = province
+      } else if (district) {
+        location = district
+      } else {
+        location = data.display_name?.split(',').slice(0, 3).join(', ') || ''
+      }
+      
+      console.log('✅ Final location:', location)
       
       setAllTrips(prev => {
         const newArr = [...prev]
         newArr[index].locationName = location
         return newArr
       })
+      
     } catch (err) { 
-      console.error('Error fetching location:', err) 
+      console.error('❌ Error fetching location:', err)
+      alert('ไม่สามารถดึงข้อมูลสถานที่ได้ กรุณาลองใหม่อีกครั้ง')
     }
   }, [])
 
@@ -324,9 +351,7 @@ export default function TrackingPage() {
       setAllTrips(prev => {
         const newArr = [...prev]
         newArr.forEach(t => { 
-          if (t.id && selectedIds.includes(t.id)) {
-            t.groupName = name
-          }
+          if (t.id && selectedIds.includes(t.id)) t.groupName = name
         })
         return newArr
       })
@@ -339,18 +364,13 @@ export default function TrackingPage() {
     if (!groupName) return
     setAllTrips(prev => {
       const newArr = [...prev]
-      newArr.forEach(t => { 
-        if (t.groupName === groupName) {
-          t.groupName = ''
-        }
-      })
+      newArr.forEach(t => { if (t.groupName === groupName) t.groupName = '' })
       return newArr
     })
   }
 
   const setStatus = (index: number, status: TripBlock['statusColor']) => {
     if (status === 'cancelled' && !confirm('ต้องการยกเลิกงานนี้ใช่หรือไม่?')) return
-    
     setAllTrips(prev => {
       const newArr = [...prev]
       newArr[index].statusColor = status
@@ -363,11 +383,9 @@ export default function TrackingPage() {
   
   const handleDrop = () => {
     if (dragItem === null || dragOverItem === null || dragItem === dragOverItem) return
-    
     const copyList = [...allTrips]
     const draggedItemContent = copyList.splice(dragItem, 1)[0]
     copyList.splice(dragOverItem, 0, draggedItemContent)
-    
     setAllTrips(copyList)
     setDragItem(null)
     setDragOverItem(null)
@@ -395,12 +413,10 @@ export default function TrackingPage() {
   const deleteBlock = async (index: number) => {
     const trip = allTrips[index]
     if (!confirm('ลบข้อมูลนี้?')) return
-    
     try {
       if (trip.id && !trip.id.startsWith('temp-')) {
         await supabase.from('trip_logs').delete().eq('id', trip.id)
       }
-      
       setAllTrips(prev => prev.filter((_, i) => i !== index))
     } catch (err) {
       console.error('Error deleting block:', err)
@@ -410,8 +426,6 @@ export default function TrackingPage() {
 
   const saveBlock = async (index: number) => {
     const trip = allTrips[index]
-    
-    // ✅ ตรวจสอบ Session ก่อนบันทึก
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       alert('Session หมดอายุ กรุณา Login ใหม่')
@@ -439,13 +453,10 @@ export default function TrackingPage() {
     
     try {
       let error, savedId = trip.id
-      
       if (trip.isNew) {
         const res = await supabase.from('trip_logs').insert([payload]).select()
         error = res.error
-        if (!error && res.data?.[0]) {
-          savedId = res.data[0].id
-        }
+        if (!error && res.data?.[0]) savedId = res.data[0].id
       } else {
         const res = await supabase.from('trip_logs').update(payload).eq('id', trip.id!).select()
         error = res.error
@@ -466,9 +477,7 @@ export default function TrackingPage() {
       setAllTrips(prev => {
         const newArr = [...prev]
         newArr[index].isNew = false
-        if (savedId && !newArr[index].id) {
-          newArr[index].id = savedId
-        }
+        if (savedId && !newArr[index].id) newArr[index].id = savedId
         return newArr
       })
       
@@ -488,7 +497,6 @@ export default function TrackingPage() {
 
   const renderCalendar = () => {
     if (!showCalendar) return null
-    
     const today = new Date()
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).getDay()
@@ -509,8 +517,7 @@ export default function TrackingPage() {
           <div className="grid grid-cols-7 gap-1">
             {days.map((d, i) => (
               <button 
-                key={i} 
-                disabled={!d} 
+                key={i} disabled={!d} 
                 onClick={() => { 
                   if (d) { 
                     const m = String(today.getMonth() + 1).padStart(2, '0')
@@ -520,9 +527,7 @@ export default function TrackingPage() {
                 className={`h-8 w-8 rounded-full text-sm flex items-center justify-center ${
                   d === today.getDate() ? 'bg-blue-500 text-white' : 'hover:bg-gray-100 text-gray-700'
                 } ${!d ? 'invisible' : ''}`}
-              >
-                {d}
-              </button>
+              >{d}</button>
             ))}
           </div>
         </div>
@@ -530,65 +535,31 @@ export default function TrackingPage() {
     )
   }
 
-  // --- Render List View (หน้าเลือกวันที่) ---
   if (viewMode === 'list') {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navigation />
         {renderCalendar()}
-        
         <div className="max-w-2xl mx-auto px-4 py-8">
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold text-gray-800">Manual E-Mail</h1>
-            <button 
-              onClick={() => setShowCalendar(true)} 
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 font-medium flex items-center gap-2"
-            >
-              + เพิ่ม
-            </button>
+            <button onClick={() => setShowCalendar(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 font-medium flex items-center gap-2">+ เพิ่ม</button>
           </div>
-          
           <div className="space-y-3">
-            {loading ? (
-              <div className="text-center py-10 text-gray-500">กำลังโหลด...</div>
-            ) : uniqueDates.length === 0 ? (
+            {loading ? <div className="text-center py-10 text-gray-500">กำลังโหลด...</div> : uniqueDates.length === 0 ? (
               <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-gray-100">
-                <div className="text-4xl mb-2">📅</div>
-                <p className="text-gray-500">ยังไม่มีงาน</p>
-                <button 
-                  onClick={() => setShowCalendar(true)} 
-                  className="mt-4 text-blue-600 hover:underline text-sm"
-                >
-                  เลือกวันที่เพื่อเริ่มงาน
-                </button>
+                <div className="text-4xl mb-2"></div><p className="text-gray-500">ยังไม่มีงาน</p>
+                <button onClick={() => setShowCalendar(true)} className="mt-4 text-blue-600 hover:underline text-sm">เลือกวันที่เพื่อเริ่มงาน</button>
               </div>
             ) : (
               uniqueDates.map(({ date, count }) => (
-                <div 
-                  key={date} 
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => handleSelectDate(date)}
-                >
+                <div key={date} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleSelectDate(date)}>
                   <div className="flex items-center gap-4">
-                    <div className="bg-blue-50 p-2 rounded-lg text-blue-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="font-bold text-gray-800 text-lg">{date.split('-').reverse().join('/')}</div>
-                      <div className="text-sm text-gray-500">{count} บล็อก</div>
-                    </div>
+                    <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+                    <div><div className="font-bold text-gray-800 text-lg">{date.split('-').reverse().join('/')}</div><div className="text-sm text-gray-500">{count} บล็อก</div></div>
                   </div>
                   <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    <button 
-                      onClick={() => deleteDate(date)} 
-                      className="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                    <button onClick={() => deleteDate(date)} className="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                     <div className="text-gray-400">›</div>
                   </div>
                 </div>
@@ -600,42 +571,28 @@ export default function TrackingPage() {
     )
   }
 
-  // --- Render Detail View (หน้าตารางงาน) ---
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <Navigation />
       {renderCalendar()}
       
-      {/* ✅ เพิ่ม Header ใหม่: ปุ่มกลับ, วันที่, และเปลี่ยนวันที่ */}
+      {/* ✅ Header ใหม่: ปุ่มกลับ, วันที่, และเปลี่ยนวันที่ */}
       <header className="bg-white shadow-sm border-b border-gray-200 sticky top-16 z-20">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button 
-                onClick={() => {
-                  setViewMode('list')
-                  setSelectedDate(new Date().toISOString().split('T')[0])
-                }}
+                onClick={() => { setViewMode('list'); setSelectedDate(new Date().toISOString().split('T')[0]) }}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
               >
                 ← กลับ
               </button>
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <h2 className="text-xl font-bold text-gray-800">
-                  {selectedDate.split('-').reverse().join('/')}
-                </h2>
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <h2 className="text-xl font-bold text-gray-800">{selectedDate.split('-').reverse().join('/')}</h2>
               </div>
             </div>
-            
-            <button 
-              onClick={() => setShowCalendar(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-            >
-              เปลี่ยนวันที่
-            </button>
+            <button onClick={() => setShowCalendar(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">เปลี่ยนวันที่</button>
           </div>
         </div>
       </header>
@@ -648,12 +605,7 @@ export default function TrackingPage() {
               {TEXT_SNIPPETS.map((snippet, i) => (
                 <div key={i} className="group bg-gray-50 border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-all">
                   <p className="text-sm text-gray-700 mb-2 wrap-break-word">{snippet}</p>
-                  <button 
-                    onClick={() => copyToClipboard(snippet)} 
-                    className="text-xs text-blue-500 hover:text-blue-700 font-medium flex items-center gap-1"
-                  >
-                     คัดลอก
-                  </button>
+                  <button onClick={() => copyToClipboard(snippet)} className="text-xs text-blue-500 hover:text-blue-700 font-medium flex items-center gap-1">คัดลอก</button>
                 </div>
               ))}
             </div>
@@ -664,251 +616,73 @@ export default function TrackingPage() {
           <div className="max-w-4xl mx-auto space-y-4">
             {currentDayTrips.length === 0 && !allTrips.some(t => t.workDate === selectedDate && t.isNew) ? (
               <div className="text-center py-20 text-gray-400 bg-white rounded-xl shadow-sm border border-dashed border-gray-300">
-                <div className="text-6xl mb-4">📋</div>
-                <p className="text-lg">ไม่มีข้อมูลสำหรับวันนี้</p>
-                <p className="text-sm mt-2">กด "+ เพิ่ม" เพื่อเริ่มงานใหม่</p>
+                <div className="text-6xl mb-4">📋</div><p className="text-lg">ไม่มีข้อมูลสำหรับวันนี้</p><p className="text-sm mt-2">กด "+ เพิ่ม" เพื่อเริ่มงานใหม่</p>
               </div>
             ) : (
               currentDayTrips.map((group, gIdx) => {
                 const groupName = group.name
                 const isStandalone = group.isStandalone
-                
                 return (
-                  <div 
-                    key={groupName + gIdx} 
-                    className={`rounded-xl border overflow-hidden transition-all shadow-sm ${
-                      isStandalone ? 'border-gray-200 bg-white' : 'border-blue-300 bg-blue-50/10'
-                    }`}
-                  >
+                  <div key={groupName + gIdx} className={`rounded-xl border overflow-hidden transition-all shadow-sm ${isStandalone ? 'border-gray-200 bg-white' : 'border-blue-300 bg-blue-50/10'}`}>
                     {!isStandalone && (
                       <div className="bg-blue-100/50 px-4 py-2 flex justify-between items-center border-b border-blue-200">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-blue-800"> กลุ่ม: {groupName}</span>
-                          <span className="text-[10px] bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">
-                            {group.indices.length} คัน
-                          </span>
-                        </div>
-                        <button 
-                          onClick={() => cancelGroup(groupName)} 
-                          className="text-xs font-medium text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-all"
-                        >
-                          ยกเลิก
-                        </button>
+                        <div className="flex items-center gap-2"><span className="text-sm font-bold text-blue-800">กลุ่ม: {groupName}</span><span className="text-[10px] bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">{group.indices.length} คัน</span></div>
+                        <button onClick={() => cancelGroup(groupName)} className="text-xs font-medium text-red-500 hover:text-red-700 bg-white border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-all">ยกเลิก</button>
                       </div>
                     )}
-                    
                     <div className={`${!isStandalone ? 'divide-y divide-blue-100/50' : ''}`}>
                       {group.indices.map((idx) => {
                         const trip = allTrips[idx]
-                        const bgColor = trip.statusColor === 'ovn' ? '#E0FFFF' 
-                                  : trip.statusColor === 'wait' ? '#FFFFE0' 
-                                  : trip.statusColor === 'postponed' ? '#FFF3E0' 
-                                  : trip.statusColor === 'cancelled' ? '#F9FAFB' 
-                                  : '#ffffff'
+                        const bgColor = trip.statusColor === 'ovn' ? '#E0FFFF' : trip.statusColor === 'wait' ? '#FFFFE0' : trip.statusColor === 'postponed' ? '#FFF3E0' : trip.statusColor === 'cancelled' ? '#F9FAFB' : '#ffffff'
                         const isCancelled = trip.statusColor === 'cancelled'
 
                         return (
-                          <div 
-                            key={trip.id || `temp-${idx}`} 
-                            className="p-4 transition-colors relative" 
-                            style={{ backgroundColor: bgColor }}
-                            draggable
-                            onDragStart={() => handleDragStart(idx)}
-                            onDragEnter={() => handleDragEnter(idx)}
-                            onDragEnd={handleDrop}
-                            onDragOver={(e) => e.preventDefault()}
-                          >
-                            {isCancelled && (
-                              <div className="absolute inset-0 bg-white/40 pointer-events-none flex items-center justify-center z-10">
-                                <span className="bg-red-100 text-red-600 px-3 py-1 rounded font-bold transform -rotate-12 border border-red-200">
-                                  ยกเลิก
-                                </span>
-                              </div>
-                            )}
+                          <div key={trip.id || `temp-${idx}`} className="p-4 transition-colors relative" style={{ backgroundColor: bgColor }} draggable onDragStart={() => handleDragStart(idx)} onDragEnter={() => handleDragEnter(idx)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()}>
+                            {isCancelled && <div className="absolute inset-0 bg-white/40 pointer-events-none flex items-center justify-center z-10"><span className="bg-red-100 text-red-600 px-3 py-1 rounded font-bold transform -rotate-12 border border-red-200">ยกเลิก</span></div>}
                             
                             <div className={`flex justify-between items-center mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
                               <div className="flex items-center gap-2">
-                                <button className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                                  </svg>
-                                </button>
-                                {isMergeMode && (
-                                  <input 
-                                    type="checkbox" 
-                                    checked={!!trip.id && selectedIds.includes(trip.id)} 
-                                    onChange={() => toggleSelect(trip.id)} 
-                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-                                  />
-                                )}
-                                <span className="text-xs text-gray-400">
-                                  {isStandalone ? 'งานเดี่ยว' : `คันที่ ${group.indices.indexOf(idx) + 1} ในกลุ่ม`}
-                                </span>
+                                <button className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg></button>
+                                {isMergeMode && <input type="checkbox" checked={!!trip.id && selectedIds.includes(trip.id)} onChange={() => toggleSelect(trip.id)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" />}
+                                <span className="text-xs text-gray-400">{isStandalone ? 'งานเดี่ยว' : `คันที่ ${group.indices.indexOf(idx) + 1} ในกลุ่ม`}</span>
                               </div>
-                              <button 
-                                onClick={() => deleteBlock(idx)} 
-                                className="text-red-400 hover:text-red-600 text-xs font-medium"
-                              >
-                                ลบ
-                              </button>
+                              <button onClick={() => deleteBlock(idx)} className="text-red-400 hover:text-red-600 text-xs font-medium">ลบ</button>
                             </div>
                             
                             <div className={`grid grid-cols-1 md:grid-cols-3 gap-3 mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">ทะเบียนรถ</label>
-                                <input 
-                                  value={trip.licensePlate}
-                                  onChange={e => updateField(idx, 'licensePlate', e.target.value)}
-                                  onBlur={() => fetchVehicleData(idx, trip.licensePlate)}
-                                  className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                  placeholder="เช่น 60-3794"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">ข้อมูล GPS</label>
-                                {trip.gpsLink ? (
-                                  <a 
-                                    href={trip.gpsLink} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="block w-full py-2 px-3 border border-blue-200 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 underline truncate text-sm text-center font-medium"
-                                  >
-                                    {trip.gpsName || 'เปิด GPS'}
-                                  </a>
-                                ) : (
-                                  <input 
-                                    value={trip.gpsName} 
-                                    disabled 
-                                    className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm"
-                                    readOnly
-                                  />
-                                )}
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">หมายเหตุ (Auto)</label>
-                                <input 
-                                  value={trip.notes} 
-                                  disabled 
-                                  className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm"
-                                  readOnly
-                                />
-                              </div>
+                              <div><label className="block text-xs font-medium text-gray-500 mb-1">ทะเบียนรถ</label><input value={trip.licensePlate} onChange={e => updateField(idx, 'licensePlate', e.target.value)} onBlur={() => fetchVehicleData(idx, trip.licensePlate)} className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น 60-3794" /></div>
+                              <div><label className="block text-xs font-medium text-gray-500 mb-1">ข้อมูล GPS</label>{trip.gpsLink ? <a href={trip.gpsLink} target="_blank" rel="noopener noreferrer" className="block w-full py-2 px-3 border border-blue-200 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 underline truncate text-sm text-center font-medium"> {trip.gpsName || 'เปิด GPS'}</a> : <input value={trip.gpsName} disabled className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm" readOnly />}</div>
+                              <div><label className="block text-xs font-medium text-gray-500 mb-1">หมายเหตุ (Auto)</label><input value={trip.notes} disabled className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm" readOnly /></div>
                             </div>
                             
                             <div className={`mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
                               <label className="block text-xs font-medium text-gray-500 mb-1">Latitude, Longitude</label>
-                              <input 
-                                value={trip.latLng}
-                                onChange={e => updateField(idx, 'latLng', e.target.value)}
-                                onBlur={() => fetchLocationFromCoords(idx, trip.latLng)}
-                                className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="13.7563, 100.5018"
-                              />
+                              <input value={trip.latLng} onChange={e => updateField(idx, 'latLng', e.target.value)} onBlur={() => fetchLocationFromCoords(idx, trip.latLng)} className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="13.7563, 100.5018" />
                             </div>
                             
                             <div className={`mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
                               <label className="block text-xs font-medium text-gray-500 mb-1">Delivery Address</label>
-                              <input 
-                                value={trip.deliveryAddress}
-                                onChange={e => updateField(idx, 'deliveryAddress', e.target.value)}
-                                className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                              />
+                              <input value={trip.deliveryAddress} onChange={e => updateField(idx, 'deliveryAddress', e.target.value)} className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                             </div>
                             
                             <div className={`mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
                               <label className="block text-xs font-medium text-gray-500 mb-1">Location (Auto-detected)</label>
-                              <input 
-                                value={trip.locationName}
-                                onChange={e => updateField(idx, 'locationName', e.target.value)}
-                                className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Phanom Phrai, Roi Et"
-                              />
+                              <input value={trip.locationName} onChange={e => updateField(idx, 'locationName', e.target.value)} className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Phanom Phrai, Roi Et" />
                             </div>
                             
                             <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 bg-gray-50/50 p-3 rounded-lg border border-gray-100 ${isCancelled ? 'opacity-50' : ''}`}>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Dist. (KM)</label>
-                                <input 
-                                  type="number" 
-                                  value={trip.distanceKm}
-                                  onChange={e => updateField(idx, 'distanceKm', e.target.value)}
-                                  onKeyDown={e => handleDistanceInput(idx, e)}
-                                  onBlur={e => handleDistanceInput(idx, e)}
-                                  className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                  placeholder="0"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">ETA (Hrs)</label>
-                                <input 
-                                  value={trip.eta} 
-                                  disabled 
-                                  className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-100 text-sm"
-                                  readOnly
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">เวลาถึง</label>
-                                <input 
-                                  value={trip.arrivalTime} 
-                                  disabled 
-                                  className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-100 text-sm"
-                                  readOnly
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">อัปเดต</label>
-                                <input 
-                                  value={trip.updatedAt} 
-                                  disabled 
-                                  className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-100 text-[10px]"
-                                  readOnly
-                                />
-                              </div>
+                              <div><label className="block text-xs font-medium text-gray-500 mb-1">Dist. (KM)</label><input type="number" value={trip.distanceKm} onChange={e => updateField(idx, 'distanceKm', e.target.value)} onKeyDown={e => handleDistanceInput(idx, e)} onBlur={e => handleDistanceInput(idx, e)} className="w-full py-2 px-3 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" /></div>
+                              <div><label className="block text-xs font-medium text-gray-500 mb-1">ETA (Hrs)</label><input value={trip.eta} disabled className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-100 text-sm" readOnly /></div>
+                              <div><label className="block text-xs font-medium text-gray-500 mb-1">เวลาถึง</label><input value={trip.arrivalTime} disabled className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-100 text-sm" readOnly /></div>
+                              <div><label className="block text-xs font-medium text-gray-500 mb-1">อัปเดต</label><input value={trip.updatedAt} disabled className="w-full py-2 px-3 border border-gray-200 rounded-lg bg-gray-100 text-[10px]" readOnly /></div>
                             </div>
                             
                             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
-                              <button 
-                                onClick={() => setStatus(idx, 'ovn')} 
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                  trip.statusColor === 'ovn' ? 'bg-[#00FFFF] border-[#00cccc] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                                }`}
-                              >
-                                OVN
-                              </button>
-                              <button 
-                                onClick={() => setStatus(idx, 'wait')} 
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                  trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                                }`}
-                              >
-                                Wait
-                              </button>
-                              <button 
-                                onClick={() => setStatus(idx, 'postponed')} 
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                  trip.statusColor === 'postponed' ? 'bg-orange-100 border-orange-300 text-orange-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                                }`}
-                              >
-                                 เลื่อนงาน
-                              </button>
-                              <button 
-                                onClick={() => setStatus(idx, 'cancelled')} 
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                  trip.statusColor === 'cancelled' ? 'bg-red-100 border-red-300 text-red-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                                }`}
-                              >
-                                ❌ ยกเลิก
-                              </button>
-                              
-                              <div className="ml-auto">
-                                <button 
-                                  onClick={() => saveBlock(idx)} 
-                                  className="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm flex items-center gap-2"
-                                >
-                                  💾 บันทึก
-                                </button>
-                              </div>
+                              <button onClick={() => setStatus(idx, 'ovn')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'ovn' ? 'bg-[#00FFFF] border-[#00cccc] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>OVN</button>
+                              <button onClick={() => setStatus(idx, 'wait')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>Wait</button>
+                              <button onClick={() => setStatus(idx, 'postponed')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'postponed' ? 'bg-orange-100 border-orange-300 text-orange-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>เลื่อนงาน</button>
+                              <button onClick={() => setStatus(idx, 'cancelled')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'cancelled' ? 'bg-red-100 border-red-300 text-red-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>❌ ยกเลิก</button>
+                              <div className="ml-auto"><button onClick={() => saveBlock(idx)} className="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm flex items-center gap-2">💾 บันทึก</button></div>
                             </div>
                           </div>
                         )
@@ -927,24 +701,8 @@ export default function TrackingPage() {
             <div className="space-y-3">
               {LOCATION_PRESETS.map((preset, i) => (
                 <div key={i} className="group bg-gray-50 border border-gray-200 rounded-lg p-3 hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start mb-1">
-                    <p className="text-sm font-medium text-gray-800 flex-1 pr-2">{preset.name}</p>
-                    <button 
-                      onClick={() => copyToClipboard(preset.name)} 
-                      className="text-gray-400 hover:text-blue-500 transition-colors"
-                    >
-                      📋
-                    </button>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <p className="text-xs text-gray-500 font-mono">{preset.latLng}</p>
-                    <button 
-                      onClick={() => copyToClipboard(preset.latLng)} 
-                      className="text-gray-400 hover:text-blue-500 transition-colors text-xs"
-                    >
-                      คัดลอก
-                    </button>
-                  </div>
+                  <div className="flex justify-between items-start mb-1"><p className="text-sm font-medium text-gray-800 flex-1 pr-2">{preset.name}</p><button onClick={() => copyToClipboard(preset.name)} className="text-gray-400 hover:text-blue-500 transition-colors">📋</button></div>
+                  <div className="flex justify-between items-center"><p className="text-xs text-gray-500 font-mono">{preset.latLng}</p><button onClick={() => copyToClipboard(preset.latLng)} className="text-gray-400 hover:text-blue-500 transition-colors text-xs">คัดลอก</button></div>
                 </div>
               ))}
             </div>
@@ -953,27 +711,11 @@ export default function TrackingPage() {
       </div>
 
       <div className="fixed bottom-6 right-6 flex items-center gap-3 z-30">
-        <button 
-          onClick={handleMerge} 
-          className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-lg font-medium transition-all hover:scale-105 active:scale-95 ${
-            isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
-          }`}
-        >
-          {isMergeMode ? '✅ ยืนยันการรวม' : '🔀 รวม'}
-        </button>
-        <button 
-          onClick={addBlock} 
-          className="flex items-center gap-2 px-6 py-3 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 font-medium transition-all hover:scale-105 active:scale-95"
-        >
-          + เพิ่ม
-        </button>
+        <button onClick={handleMerge} className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-lg font-medium transition-all hover:scale-105 active:scale-95 ${isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'}`}>{isMergeMode ? '✅ ยืนยันการรวม' : '🔀 รวม'}</button>
+        <button onClick={addBlock} className="flex items-center gap-2 px-6 py-3 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 font-medium transition-all hover:scale-105 active:scale-95">+ เพิ่ม</button>
       </div>
       
-      {copiedText && (
-        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-full shadow-lg text-sm z-50 animate-bounce">
-          ✅ คัดลอกสำเร็จ!
-        </div>
-      )}
+      {copiedText && <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-full shadow-lg text-sm z-50 animate-bounce">✅ คัดลอกสำเร็จ!</div>}
     </div>
   )
 }
