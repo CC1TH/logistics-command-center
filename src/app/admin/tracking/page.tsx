@@ -226,25 +226,16 @@ export default function TrackingPage() {
     }
   }
 
-  // ✅ ฟังก์ชันดึงชื่อสถานที่จากพิกัด (แก้ไขแล้ว)
   const fetchLocationFromCoords = useCallback(async (index: number, latLng: string) => {
     const cleanLatLng = latLng.trim()
     const coords = cleanLatLng.split(',').map(c => c.trim())
     
-    console.log('📍 Parsing coords:', coords)
-    
-    if (coords.length !== 2) {
-      console.error('❌ Invalid format: ต้องมี 2 ค่าคั่นด้วย ,')
-      return
-    }
+    if (coords.length !== 2) return
     
     const lat = parseFloat(coords[0])
     const lng = parseFloat(coords[1])
     
-    if (isNaN(lat) || isNaN(lng)) {
-      console.error('❌ Invalid numbers:', coords[0], coords[1])
-      return
-    }
+    if (isNaN(lat) || isNaN(lng)) return
 
     try {
       const res = await fetch(
@@ -260,8 +251,6 @@ export default function TrackingPage() {
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
       
       const data = await res.json()
-      console.log(' Nominatim response:', data)
-      
       const addr = data.address || {}
       
       let district = addr.county || addr.city_district || addr.district || ''
@@ -284,17 +273,10 @@ export default function TrackingPage() {
       province = province.replace(/(Province|Changwat|State|Governorate)/gi, '').trim()
       
       let location = ''
-      if (district && province) {
-        location = `${district}, ${province}`
-      } else if (province) {
-        location = province
-      } else if (district) {
-        location = district
-      } else {
-        location = data.display_name?.split(',').slice(0, 3).join(', ') || ''
-      }
-      
-      console.log('✅ Final location:', location)
+      if (district && province) location = `${district}, ${province}`
+      else if (province) location = province
+      else if (district) location = district
+      else location = data.display_name?.split(',').slice(0, 3).join(', ') || ''
       
       setAllTrips(prev => {
         const newArr = [...prev]
@@ -303,8 +285,7 @@ export default function TrackingPage() {
       })
       
     } catch (err) { 
-      console.error('❌ Error fetching location:', err)
-      alert('ไม่สามารถดึงข้อมูลสถานที่ได้ กรุณาลองใหม่อีกครั้ง')
+      console.error('Error fetching location:', err)
     }
   }, [])
 
@@ -637,12 +618,39 @@ export default function TrackingPage() {
                         const isCancelled = trip.statusColor === 'cancelled'
 
                         return (
-                          <div key={trip.id || `temp-${idx}`} className="p-4 transition-colors relative" style={{ backgroundColor: bgColor }} draggable onDragStart={() => handleDragStart(idx)} onDragEnter={() => handleDragEnter(idx)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()}>
+                          <div 
+                            key={trip.id || `temp-${idx}`} 
+                            className="p-4 transition-colors relative" 
+                            style={{ backgroundColor: bgColor }}
+                            // ✅ ลากได้ทั้งแถว แต่จะตรวจสอบว่าเริ่มลากจากปุ่มจับหรือไม่
+                            draggable
+                            onDragStart={(e) => {
+                              // ✅ แก้ไข Error TypeScript: Cast e.target เป็น HTMLElement
+                              const target = e.target as HTMLElement
+                              if (!target.closest('[data-drag-handle]')) {
+                                e.preventDefault()
+                                return
+                              }
+                              handleDragStart(idx)
+                            }}
+                            onDragEnter={() => handleDragEnter(idx)}
+                            onDragEnd={handleDrop}
+                            onDragOver={(e) => e.preventDefault()}
+                          >
                             {isCancelled && <div className="absolute inset-0 bg-white/40 pointer-events-none flex items-center justify-center z-10"><span className="bg-red-100 text-red-600 px-3 py-1 rounded font-bold transform -rotate-12 border border-red-200">ยกเลิก</span></div>}
                             
                             <div className={`flex justify-between items-center mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
                               <div className="flex items-center gap-2">
-                                <button className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg></button>
+                                {/* ✅ ปุ่มจัดลำดับ: คลิกค้างที่นี่เท่านั้นถึงจะลากได้ */}
+                                <button 
+                                  data-drag-handle="true"
+                                  className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1.5 -ml-1.5 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
+                                  aria-label="Drag to reorder"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
+                                  </svg>
+                                </button>
                                 {isMergeMode && <input type="checkbox" checked={!!trip.id && selectedIds.includes(trip.id)} onChange={() => toggleSelect(trip.id)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" />}
                                 <span className="text-xs text-gray-400">{isStandalone ? 'งานเดี่ยว' : `คันที่ ${group.indices.indexOf(idx) + 1} ในกลุ่ม`}</span>
                               </div>
@@ -682,7 +690,7 @@ export default function TrackingPage() {
                               <button onClick={() => setStatus(idx, 'wait')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>Wait</button>
                               <button onClick={() => setStatus(idx, 'postponed')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'postponed' ? 'bg-orange-100 border-orange-300 text-orange-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>เลื่อนงาน</button>
                               <button onClick={() => setStatus(idx, 'cancelled')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'cancelled' ? 'bg-red-100 border-red-300 text-red-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>❌ ยกเลิก</button>
-                              <div className="ml-auto"><button onClick={() => saveBlock(idx)} className="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm flex items-center gap-2">💾 บันทึก</button></div>
+                              <div className="ml-auto"><button onClick={() => saveBlock(idx)} className="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm flex items-center gap-2"> บันทึก</button></div>
                             </div>
                           </div>
                         )
@@ -701,7 +709,7 @@ export default function TrackingPage() {
             <div className="space-y-3">
               {LOCATION_PRESETS.map((preset, i) => (
                 <div key={i} className="group bg-gray-50 border border-gray-200 rounded-lg p-3 hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start mb-1"><p className="text-sm font-medium text-gray-800 flex-1 pr-2">{preset.name}</p><button onClick={() => copyToClipboard(preset.name)} className="text-gray-400 hover:text-blue-500 transition-colors">📋</button></div>
+                  <div className="flex justify-between items-start mb-1"><p className="text-sm font-medium text-gray-800 flex-1 pr-2">{preset.name}</p><button onClick={() => copyToClipboard(preset.name)} className="text-gray-400 hover:text-blue-500 transition-colors"></button></div>
                   <div className="flex justify-between items-center"><p className="text-xs text-gray-500 font-mono">{preset.latLng}</p><button onClick={() => copyToClipboard(preset.latLng)} className="text-gray-400 hover:text-blue-500 transition-colors text-xs">คัดลอก</button></div>
                 </div>
               ))}
@@ -711,7 +719,7 @@ export default function TrackingPage() {
       </div>
 
       <div className="fixed bottom-6 right-6 flex items-center gap-3 z-30">
-        <button onClick={handleMerge} className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-lg font-medium transition-all hover:scale-105 active:scale-95 ${isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'}`}>{isMergeMode ? '✅ ยืนยันการรวม' : '🔀 รวม'}</button>
+        <button onClick={handleMerge} className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-lg font-medium transition-all hover:scale-105 active:scale-95 ${isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'}`}>{isMergeMode ? '✅ ยืนยันการรวม' : ' รวม'}</button>
         <button onClick={addBlock} className="flex items-center gap-2 px-6 py-3 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 font-medium transition-all hover:scale-105 active:scale-95">+ เพิ่ม</button>
       </div>
       
