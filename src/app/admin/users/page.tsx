@@ -63,16 +63,33 @@ export default function UsersPage() {
     }
   }, [checkingAuth])
 
+  // ✅ ฟังก์ชันโหลดข้อมูลผู้ใช้ (แก้ไขแล้ว - ส่ง Token ไปด้วย)
   const fetchUsers = async () => {
     setLoading(true)
     setError(null)
     
     try {
-      console.log('Fetching users...')
+      // ✅ ดึง session ปัจจุบัน
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+        throw new Error('Session หมดอายุ กรุณา Login ใหม่')
+      }
+
+      if (!session || !session.access_token) {
+        console.error('No session or access token')
+        throw new Error('Session หมดอายุ กรุณา Login ใหม่')
+      }
+
+      console.log('Fetching users with token...')
+      
+      // ✅ ส่ง token ไปด้วยใน header
       const res = await fetch('/api/users', {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}` // ✅ ส่ง access token
         }
       })
       
@@ -96,6 +113,14 @@ export default function UsersPage() {
       console.error('Error fetching users:', err)
       setError(err.message || 'เกิดข้อผิดพลาดในการโหลดข้อมูล')
       alert(err.message || 'ไม่สามารถโหลดข้อมูลผู้ใช้ได้')
+      
+      // ✅ ถ้า session หมดอายุ ให้ redirect ไป login
+      if (err.message.includes('Session หมดอายุ')) {
+        await supabase.auth.signOut()
+        setTimeout(() => {
+          router.push('/login')
+        }, 2000)
+      }
     } finally {
       setLoading(false)
     }
@@ -108,9 +133,19 @@ export default function UsersPage() {
     }
 
     try {
+      // ✅ ดึง session สำหรับการสร้าง user
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Session หมดอายุ กรุณา Login ใหม่')
+      }
+
       const res = await fetch('/api/create-user', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}` // ✅ ส่ง token
+        },
         body: JSON.stringify({ email: newEmail, password: newPassword })
       })
       
@@ -133,9 +168,19 @@ export default function UsersPage() {
     if (!confirm(`ต้องการลบผู้ใช้ ${email} ใช่หรือไม่?`)) return
 
     try {
+      // ✅ ดึง session สำหรับการลบ user
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Session หมดอายุ กรุณา Login ใหม่')
+      }
+
       const res = await fetch('/api/delete-user', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}` // ✅ ส่ง token
+        },
         body: JSON.stringify({ userId })
       })
       

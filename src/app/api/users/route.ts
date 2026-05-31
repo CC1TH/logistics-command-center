@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { isAdminEmail } from '@/lib/checkAuth'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,23 +14,38 @@ export async function GET() {
       }
     )
     
-    // ตรวจสอบสิทธิ์ Admin
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
+    // ✅ ดึง token จาก header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
       return NextResponse.json(
-        { error: 'Unauthorized: Not logged in' }, 
+        { error: 'No authorization header' }, 
         { status: 401 }
       )
     }
 
-    if (!isAdminEmail(user.email)) {
+    const token = authHeader.replace('Bearer ', '')
+    
+    // ✅ ตรวจสอบ user จาก token
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    
+    if (userError || !user) {
+      console.error('User auth error:', userError)
+      return NextResponse.json(
+        { error: 'Unauthorized' }, 
+        { status: 401 }
+      )
+    }
+
+    // ✅ ตรวจสอบว่าเป็น admin หรือไม่
+    const adminEmails = ['admin@cc1etlth.co.th']
+    if (!adminEmails.includes(user.email || '')) {
       return NextResponse.json(
         { error: 'Forbidden: Admin access required' }, 
         { status: 403 }
       )
     }
 
+    // ✅ ดึงรายการ users
     const { data: { users }, error } = await supabase.auth.admin.listUsers()
     
     if (error) {
@@ -39,7 +53,13 @@ export async function GET() {
       throw error
     }
 
-    return NextResponse.json({ users })
+    return NextResponse.json({ 
+      users: users.map(u => ({
+        id: u.id,
+        email: u.email || '',
+        created_at: u.created_at
+      }))
+    })
   } catch (error) {
     console.error('Error in GET /api/users:', error)
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
