@@ -55,7 +55,6 @@ export default function TrackingPage() {
   const [dragOverItem, setDragOverItem] = useState<number | null>(null)
   const [hideCancelled, setHideCancelled] = useState(false)
 
-  // ✅ 1. โหลดข้อมูลเมื่อเปิดหน้า (ตรวจสอบ SessionStorage เพื่อป้องกันงานหาย)
   useEffect(() => {
     const init = async () => {
       const tempTrips = sessionStorage.getItem('temp-trips')
@@ -74,7 +73,6 @@ export default function TrackingPage() {
     init()
   }, [])
 
-  // ✅ 2. บันทึกข้อมูลลง SessionStorage ทุกครั้งที่มีการแก้ไข
   useEffect(() => {
     if (allTrips.length > 0) {
       sessionStorage.setItem('temp-trips', JSON.stringify(allTrips))
@@ -557,7 +555,6 @@ export default function TrackingPage() {
       <Navigation />
       {renderCalendar()}
       
-      {/* ✅ Header ใหม่: ปุ่มกลับ, วันที่, และเปลี่ยนวันที่ */}
       <header className="bg-white shadow-sm border-b border-gray-200 sticky top-16 z-20">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
@@ -622,15 +619,17 @@ export default function TrackingPage() {
                             key={trip.id || `temp-${idx}`} 
                             className="p-4 transition-colors relative" 
                             style={{ backgroundColor: bgColor }}
-                            // ✅ ลากได้ทั้งแถว แต่จะตรวจสอบว่าเริ่มลากจากปุ่มจับหรือไม่
                             draggable
                             onDragStart={(e) => {
-                              // ✅ แก้ไข Error TypeScript: Cast e.target เป็น HTMLElement
+                              // ✅ ตรวจสอบว่าคลิกที่ปุ่ม drag handle หรือไม่
                               const target = e.target as HTMLElement
-                              if (!target.closest('[data-drag-handle]')) {
+                              const dragHandle = target.closest('[data-drag-handle="true"]')
+                              
+                              if (!dragHandle) {
                                 e.preventDefault()
                                 return
                               }
+                              
                               handleDragStart(idx)
                             }}
                             onDragEnter={() => handleDragEnter(idx)}
@@ -643,7 +642,9 @@ export default function TrackingPage() {
                               <div className="flex items-center gap-2">
                                 {/* ✅ ปุ่มจัดลำดับ: คลิกค้างที่นี่เท่านั้นถึงจะลากได้ */}
                                 <button 
+                                  type="button"
                                   data-drag-handle="true"
+                                  draggable
                                   className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1.5 -ml-1.5 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                                   aria-label="Drag to reorder"
                                 >
@@ -709,7 +710,7 @@ export default function TrackingPage() {
             <div className="space-y-3">
               {LOCATION_PRESETS.map((preset, i) => (
                 <div key={i} className="group bg-gray-50 border border-gray-200 rounded-lg p-3 hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start mb-1"><p className="text-sm font-medium text-gray-800 flex-1 pr-2">{preset.name}</p><button onClick={() => copyToClipboard(preset.name)} className="text-gray-400 hover:text-blue-500 transition-colors"></button></div>
+                  <div className="flex justify-between items-start mb-1"><p className="text-sm font-medium text-gray-800 flex-1 pr-2">{preset.name}</p><button onClick={() => copyToClipboard(preset.name)} className="text-gray-400 hover:text-blue-500 transition-colors">📋</button></div>
                   <div className="flex justify-between items-center"><p className="text-xs text-gray-500 font-mono">{preset.latLng}</p><button onClick={() => copyToClipboard(preset.latLng)} className="text-gray-400 hover:text-blue-500 transition-colors text-xs">คัดลอก</button></div>
                 </div>
               ))}
