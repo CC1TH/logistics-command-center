@@ -54,36 +54,32 @@ export default function TrackingPage() {
   const [dragItem, setDragItem] = useState<number | null>(null)
   const [dragOverItem, setDragOverItem] = useState<number | null>(null)
   const [hideCancelled, setHideCancelled] = useState(false)
+  const [saving, setSaving] = useState<number | null>(null)
 
-  useEffect(() => {
-    const init = async () => {
-      const tempTrips = sessionStorage.getItem('temp-trips')
-      if (tempTrips) {
-        try {
-          setAllTrips(JSON.parse(tempTrips))
-          setLoading(false)
-          setViewMode('detail')
-          return
-        } catch (e) {
-          console.error('Error parsing temp trips', e)
-        }
-      }
-      await fetchAllTrips()
-    }
-    init()
-  }, [])
-
-  useEffect(() => {
-    if (allTrips.length > 0) {
-      sessionStorage.setItem('temp-trips', JSON.stringify(allTrips))
-    }
-  }, [allTrips])
-
+  // ✅ ฟังก์ชันคัดลอกข้อความ (เพิ่มเข้ามา)
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopiedText(text)
     setTimeout(() => setCopiedText(null), 2000)
   }
+
+  useEffect(() => {
+    fetchAllTrips()
+    
+    const channel = supabase
+      .channel('trip_logs_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'trip_logs' },
+        () => {
+          fetchAllTrips()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   const fetchAllTrips = async () => {
     setLoading(true)
@@ -99,17 +95,9 @@ export default function TrackingPage() {
         .from('trip_logs')
         .select('*')
         .order('work_date', { ascending: false })
-        .limit(200)
+        .limit(500)
       
-      if (error) {
-        console.error('Supabase Fetch Error:', error)
-        if (error.message.includes('403') || error.message.includes('401')) {
-           alert('Session หมดอายุ กรุณา Login ใหม่อีกครั้ง')
-           await supabase.auth.signOut()
-           router.push('/login')
-        }
-        throw error
-      }
+      if (error) throw error
       
       const mapped: TripBlock[] = (data || []).map((t: any) => ({
         id: t.id,
@@ -131,9 +119,8 @@ export default function TrackingPage() {
       }))
       
       setAllTrips(mapped)
-      sessionStorage.removeItem('temp-trips')
     } catch (err) { 
-      console.error('Error fetching trips:', err) 
+      console.error('Error fetching trips:', err)
     } finally { 
       setLoading(false) 
     }
@@ -160,7 +147,6 @@ export default function TrackingPage() {
     try {
       await supabase.from('trip_logs').delete().eq('work_date', date)
       fetchAllTrips()
-      sessionStorage.removeItem('temp-trips')
     } catch (err) {
       console.error('Error deleting date:', err)
       alert('ไม่สามารถลบได้')
@@ -173,6 +159,7 @@ export default function TrackingPage() {
       setShowCalendar(true)
       return
     }
+    
     setAllTrips(prev => [...prev, {
       id: `temp-${Date.now()}`,
       workDate: selectedDate,
@@ -238,12 +225,7 @@ export default function TrackingPage() {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en&zoom=10`,
-        { 
-          headers: { 
-            'User-Agent': 'LogisticsCommandCenter/1.0',
-            'Accept': 'application/json'
-          } 
-        }
+        { headers: { 'User-Agent': 'LogisticsCommandCenter/1.0', 'Accept': 'application/json' } }
       )
       
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
@@ -404,34 +386,37 @@ export default function TrackingPage() {
   }
 
   const saveBlock = async (index: number) => {
+    setSaving(index)
     const trip = allTrips[index]
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      alert('Session หมดอายุ กรุณา Login ใหม่')
-      router.push('/login')
-      return
-    }
-
-    const payload = { 
-      work_date: trip.workDate,
-      group_name: trip.groupName,
-      license_plate: trip.licensePlate,
-      gps_name: trip.gpsName,
-      gps_link: trip.gpsLink,
-      notes: trip.notes,
-      lat_lng: trip.latLng,
-      delivery_address: trip.deliveryAddress,
-      location_name: trip.locationName,
-      distance_km: parseFloat(trip.distanceKm) || null,
-      eta_hours: parseFloat(trip.eta) || null,
-      arrival_time: trip.arrivalTime,
-      updated_at: new Date().toISOString(),
-      status_color: trip.statusColor,
-      sort_order: index
-    }
     
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        alert('Session หมดอายุ กรุณา Login ใหม่')
+        router.push('/login')
+        return
+      }
+
+      const payload = { 
+        work_date: trip.workDate,
+        group_name: trip.groupName,
+        license_plate: trip.licensePlate,
+        gps_name: trip.gpsName,
+        gps_link: trip.gpsLink,
+        notes: trip.notes,
+        lat_lng: trip.latLng,
+        delivery_address: trip.deliveryAddress,
+        location_name: trip.locationName,
+        distance_km: parseFloat(trip.distanceKm) || null,
+        eta_hours: parseFloat(trip.eta) || null,
+        arrival_time: trip.arrivalTime,
+        updated_at: new Date().toISOString(),
+        status_color: trip.statusColor,
+        sort_order: index
+      }
+      
       let error, savedId = trip.id
+      
       if (trip.isNew) {
         const res = await supabase.from('trip_logs').insert([payload]).select()
         error = res.error
@@ -443,13 +428,7 @@ export default function TrackingPage() {
       
       if (error) {
         console.error('Save error:', error)
-        if (error.message.includes('403') || error.message.includes('401')) {
-           alert('เกิดข้อผิดพลาดสิทธิ์การเข้าถึง กรุณา Login ใหม่อีกครั้ง')
-           await supabase.auth.signOut()
-           router.push('/login')
-        } else {
-           alert('บันทึกไม่สำเร็จ: ' + error.message)
-        }
+        alert('บันทึกไม่สำเร็จ: ' + error.message)
         return
       }
       
@@ -460,12 +439,14 @@ export default function TrackingPage() {
         return newArr
       })
       
-      sessionStorage.removeItem('temp-trips')
+      await fetchAllTrips()
       alert('บันทึกสำเร็จ')
       
     } catch (err) {
       console.error('Error saving block:', err)
       alert('เกิดข้อผิดพลาดในการบันทึก')
+    } finally {
+      setSaving(null)
     }
   }
 
@@ -495,18 +476,7 @@ export default function TrackingPage() {
           </div>
           <div className="grid grid-cols-7 gap-1">
             {days.map((d, i) => (
-              <button 
-                key={i} disabled={!d} 
-                onClick={() => { 
-                  if (d) { 
-                    const m = String(today.getMonth() + 1).padStart(2, '0')
-                    handleSelectDate(`${today.getFullYear()}-${m}-${String(d).padStart(2, '0')}`)
-                  } 
-                }} 
-                className={`h-8 w-8 rounded-full text-sm flex items-center justify-center ${
-                  d === today.getDate() ? 'bg-blue-500 text-white' : 'hover:bg-gray-100 text-gray-700'
-                } ${!d ? 'invisible' : ''}`}
-              >{d}</button>
+              <button key={i} disabled={!d} onClick={() => { if (d) { const m = String(today.getMonth() + 1).padStart(2, '0'); handleSelectDate(`${today.getFullYear()}-${m}-${String(d).padStart(2, '0')}`) } }} className={`h-8 w-8 rounded-full text-sm flex items-center justify-center ${d === today.getDate() ? 'bg-blue-500 text-white' : 'hover:bg-gray-100 text-gray-700'} ${!d ? 'invisible' : ''}`}>{d}</button>
             ))}
           </div>
         </div>
@@ -527,7 +497,7 @@ export default function TrackingPage() {
           <div className="space-y-3">
             {loading ? <div className="text-center py-10 text-gray-500">กำลังโหลด...</div> : uniqueDates.length === 0 ? (
               <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-gray-100">
-                <div className="text-4xl mb-2"></div><p className="text-gray-500">ยังไม่มีงาน</p>
+                <div className="text-4xl mb-2">📅</div><p className="text-gray-500">ยังไม่มีงาน</p>
                 <button onClick={() => setShowCalendar(true)} className="mt-4 text-blue-600 hover:underline text-sm">เลือกวันที่เพื่อเริ่มงาน</button>
               </div>
             ) : (
@@ -559,12 +529,7 @@ export default function TrackingPage() {
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button 
-                onClick={() => { setViewMode('list'); setSelectedDate(new Date().toISOString().split('T')[0]) }}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
-              >
-                ← กลับ
-              </button>
+              <button onClick={() => { setViewMode('list'); setSelectedDate(new Date().toISOString().split('T')[0]) }} className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors">← กลับ</button>
               <div className="flex items-center gap-2">
                 <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                 <h2 className="text-xl font-bold text-gray-800">{selectedDate.split('-').reverse().join('/')}</h2>
@@ -613,44 +578,16 @@ export default function TrackingPage() {
                         const trip = allTrips[idx]
                         const bgColor = trip.statusColor === 'ovn' ? '#E0FFFF' : trip.statusColor === 'wait' ? '#FFFFE0' : trip.statusColor === 'postponed' ? '#FFF3E0' : trip.statusColor === 'cancelled' ? '#F9FAFB' : '#ffffff'
                         const isCancelled = trip.statusColor === 'cancelled'
+                        const isSaving = saving === idx
 
                         return (
-                          <div 
-                            key={trip.id || `temp-${idx}`} 
-                            className="p-4 transition-colors relative" 
-                            style={{ backgroundColor: bgColor }}
-                            draggable
-                            onDragStart={(e) => {
-                              // ✅ ตรวจสอบว่าคลิกที่ปุ่ม drag handle หรือไม่
-                              const target = e.target as HTMLElement
-                              const dragHandle = target.closest('[data-drag-handle="true"]')
-                              
-                              if (!dragHandle) {
-                                e.preventDefault()
-                                return
-                              }
-                              
-                              handleDragStart(idx)
-                            }}
-                            onDragEnter={() => handleDragEnter(idx)}
-                            onDragEnd={handleDrop}
-                            onDragOver={(e) => e.preventDefault()}
-                          >
+                          <div key={trip.id || `temp-${idx}`} className="p-4 transition-colors relative" style={{ backgroundColor: bgColor }} draggable onDragStart={(e) => { const target = e.target as HTMLElement; const dragHandle = target.closest('[data-drag-handle="true"]'); if (!dragHandle) { e.preventDefault(); return; } handleDragStart(idx) }} onDragEnter={() => handleDragEnter(idx)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()}>
                             {isCancelled && <div className="absolute inset-0 bg-white/40 pointer-events-none flex items-center justify-center z-10"><span className="bg-red-100 text-red-600 px-3 py-1 rounded font-bold transform -rotate-12 border border-red-200">ยกเลิก</span></div>}
                             
                             <div className={`flex justify-between items-center mb-3 ${isCancelled ? 'opacity-50' : ''}`}>
                               <div className="flex items-center gap-2">
-                                {/* ✅ ปุ่มจัดลำดับ: คลิกค้างที่นี่เท่านั้นถึงจะลากได้ */}
-                                <button 
-                                  type="button"
-                                  data-drag-handle="true"
-                                  draggable
-                                  className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1.5 -ml-1.5 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
-                                  aria-label="Drag to reorder"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
-                                  </svg>
+                                <button type="button" data-drag-handle="true" draggable className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1.5 -ml-1.5 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center" aria-label="Drag to reorder">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" /></svg>
                                 </button>
                                 {isMergeMode && <input type="checkbox" checked={!!trip.id && selectedIds.includes(trip.id)} onChange={() => toggleSelect(trip.id)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" />}
                                 <span className="text-xs text-gray-400">{isStandalone ? 'งานเดี่ยว' : `คันที่ ${group.indices.indexOf(idx) + 1} ในกลุ่ม`}</span>
@@ -691,7 +628,11 @@ export default function TrackingPage() {
                               <button onClick={() => setStatus(idx, 'wait')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'wait' ? 'bg-[#FFFF00] border-[#cccc00] text-black shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>Wait</button>
                               <button onClick={() => setStatus(idx, 'postponed')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'postponed' ? 'bg-orange-100 border-orange-300 text-orange-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>เลื่อนงาน</button>
                               <button onClick={() => setStatus(idx, 'cancelled')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${trip.statusColor === 'cancelled' ? 'bg-red-100 border-red-300 text-red-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>❌ ยกเลิก</button>
-                              <div className="ml-auto"><button onClick={() => saveBlock(idx)} className="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm flex items-center gap-2"> บันทึก</button></div>
+                              <div className="ml-auto">
+                                <button onClick={() => saveBlock(idx)} disabled={isSaving} className="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm flex items-center gap-2 disabled:opacity-50">
+                                  {isSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )
@@ -720,7 +661,7 @@ export default function TrackingPage() {
       </div>
 
       <div className="fixed bottom-6 right-6 flex items-center gap-3 z-30">
-        <button onClick={handleMerge} className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-lg font-medium transition-all hover:scale-105 active:scale-95 ${isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'}`}>{isMergeMode ? '✅ ยืนยันการรวม' : ' รวม'}</button>
+        <button onClick={handleMerge} className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-lg font-medium transition-all hover:scale-105 active:scale-95 ${isMergeMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'}`}>{isMergeMode ? '✅ ยืนยันการรวม' : '🔀 รวม'}</button>
         <button onClick={addBlock} className="flex items-center gap-2 px-6 py-3 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 font-medium transition-all hover:scale-105 active:scale-95">+ เพิ่ม</button>
       </div>
       
