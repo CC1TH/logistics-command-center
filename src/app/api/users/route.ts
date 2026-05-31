@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isAdminEmail } from '@/lib/checkAuth'
 
 export async function GET() {
   try {
-    // ใช้ Service Role Key สำหรับ Admin API
-    const supabaseAdmin = createClient(
+    const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       {
@@ -15,7 +15,24 @@ export async function GET() {
       }
     )
     
-    const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers()
+    // ตรวจสอบสิทธิ์ Admin
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Not logged in' }, 
+        { status: 401 }
+      )
+    }
+
+    if (!isAdminEmail(user.email)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Admin access required' }, 
+        { status: 403 }
+      )
+    }
+
+    const { data: { users }, error } = await supabase.auth.admin.listUsers()
     
     if (error) {
       console.error('Error listing users:', error)

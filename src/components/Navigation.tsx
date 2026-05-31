@@ -1,22 +1,38 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabaseClient'
+import { ADMIN_EMAILS } from '@/lib/checkAuth'
 
 export default function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      setIsAdmin(ADMIN_EMAILS.includes(user?.email || ''))
+    }
+    checkUser()
+  }, [])
 
   const tabs = [
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Manual E-Mail', path: '/admin/tracking' },
     { name: 'OverNight', path: '/overnight' },
-    { name: 'Data Comparison', path: '/compare' }, // ✅ เปลี่ยนชื่อเป็น Data Comparison
-    { name: 'Settings', path: '/admin/settings' },
+    { name: 'Data Comparison', path: '/compare' },
+    // แสดง Settings เฉพาะ Admin
+    ...(isAdmin ? [{ name: 'Settings', path: '/admin/settings' }] : []),
   ]
 
   const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
     router.push('/login')
   }
 

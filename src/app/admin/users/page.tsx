@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Navigation from '@/components/Navigation'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabaseClient'
+import { ADMIN_EMAILS } from '@/lib/checkAuth'
 
 interface User {
   id: string
@@ -13,27 +15,60 @@ interface User {
 
 export default function UsersPage() {
   const router = useRouter()
+  const supabase = createClient()
   
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
+  const [checkingAuth, setCheckingAuth] = useState(true)
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
 
+  // ตรวจสอบสิทธิ์ Admin
   useEffect(() => {
-    fetchUsers()
-  }, [])
+    const checkAuth = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      
+      if (error || !user) {
+        router.push('/login')
+        return
+      }
+
+      // ตรวจสอบว่าเป็น Admin หรือไม่
+      if (!ADMIN_EMAILS.includes(user.email || '')) {
+        alert('คุณไม่มีสิทธิ์เข้าถึงหน้านี้')
+        router.push('/dashboard')
+        return
+      }
+
+      setCheckingAuth(false)
+    }
+
+    checkAuth()
+  }, [router, supabase.auth])
+
+  useEffect(() => {
+    if (!checkingAuth) {
+      fetchUsers()
+    }
+  }, [checkingAuth])
 
   const fetchUsers = async () => {
     setLoading(true)
     try {
       const res = await fetch('/api/users')
-      if (!res.ok) throw new Error('Failed to fetch users')
+      if (!res.ok) {
+        if (res.status === 403) {
+          throw new Error('Unauthorized')
+        }
+        throw new Error('Failed to fetch users')
+      }
       const data = await res.json()
       setUsers(data.users || [])
     } catch (err) {
       console.error('Error fetching users:', err)
       alert('ไม่สามารถโหลดข้อมูลผู้ใช้ได้')
+      router.push('/dashboard')
     } finally {
       setLoading(false)
     }
@@ -52,15 +87,18 @@ export default function UsersPage() {
         body: JSON.stringify({ email: newEmail, password: newPassword })
       })
       
-      if (!res.ok) throw new Error('Failed to create user')
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Failed to create user')
+      }
       
       alert('สร้างผู้ใช้สำเร็จ')
       setNewEmail('')
       setNewPassword('')
       setShowAddForm(false)
       fetchUsers()
-    } catch (err) {
-      alert('เกิดข้อผิดพลาด: ' + (err as Error).message)
+    } catch (err: any) {
+      alert('เกิดข้อผิดพลาด: ' + err.message)
     }
   }
 
@@ -74,17 +112,33 @@ export default function UsersPage() {
         body: JSON.stringify({ userId })
       })
       
-      if (!res.ok) throw new Error('Failed to delete user')
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Failed to delete user')
+      }
       
       alert('ลบผู้ใช้สำเร็จ')
       fetchUsers()
-    } catch (err) {
-      alert('เกิดข้อผิดพลาด: ' + (err as Error).message)
+    } catch (err: any) {
+      alert('เกิดข้อผิดพลาด: ' + err.message)
     }
   }
 
   const handleLogout = async () => {
+    await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  // แสดง Loading ขณะตรวจสอบสิทธิ์
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">กำลังตรวจสอบสิทธิ์...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
