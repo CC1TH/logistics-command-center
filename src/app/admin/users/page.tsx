@@ -23,30 +23,40 @@ export default function UsersPage() {
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // ตรวจสอบสิทธิ์ Admin
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser()
-      
-      if (error || !user) {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser()
+        
+        if (error || !user) {
+          console.error('Auth error:', error)
+          alert('กรุณา Login ใหม่')
+          router.push('/login')
+          return
+        }
+
+        // ตรวจสอบว่าเป็น Admin หรือไม่
+        if (!ADMIN_EMAILS.includes(user.email || '')) {
+          alert('คุณไม่มีสิทธิ์เข้าถึงหน้านี้')
+          router.push('/dashboard')
+          return
+        }
+
+        setCheckingAuth(false)
+      } catch (err) {
+        console.error('Error in checkAuth:', err)
+        alert('เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์')
         router.push('/login')
-        return
       }
-
-      // ตรวจสอบว่าเป็น Admin หรือไม่
-      if (!ADMIN_EMAILS.includes(user.email || '')) {
-        alert('คุณไม่มีสิทธิ์เข้าถึงหน้านี้')
-        router.push('/dashboard')
-        return
-      }
-
-      setCheckingAuth(false)
     }
 
     checkAuth()
   }, [router, supabase.auth])
 
+  // โหลดข้อมูลผู้ใช้
   useEffect(() => {
     if (!checkingAuth) {
       fetchUsers()
@@ -55,20 +65,37 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     setLoading(true)
+    setError(null)
+    
     try {
-      const res = await fetch('/api/users')
+      console.log('Fetching users...')
+      const res = await fetch('/api/users', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      console.log('Response status:', res.status)
+      
       if (!res.ok) {
         if (res.status === 403) {
-          throw new Error('Unauthorized')
+          throw new Error('คุณไม่มีสิทธิ์เข้าถึงข้อมูลผู้ใช้')
+        } else if (res.status === 401) {
+          throw new Error('Session หมดอายุ กรุณา Login ใหม่')
+        } else {
+          const errorData = await res.json()
+          throw new Error(errorData.error || 'ไม่สามารถโหลดข้อมูลผู้ใช้ได้')
         }
-        throw new Error('Failed to fetch users')
       }
+      
       const data = await res.json()
+      console.log('Users data:', data)
       setUsers(data.users || [])
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching users:', err)
-      alert('ไม่สามารถโหลดข้อมูลผู้ใช้ได้')
-      router.push('/dashboard')
+      setError(err.message || 'เกิดข้อผิดพลาดในการโหลดข้อมูล')
+      alert(err.message || 'ไม่สามารถโหลดข้อมูลผู้ใช้ได้')
     } finally {
       setLoading(false)
     }
@@ -209,6 +236,16 @@ export default function UsersPage() {
             <div className="p-8 text-center text-gray-500">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
               กำลังโหลดข้อมูล...
+            </div>
+          ) : error ? (
+            <div className="p-8 text-center">
+              <div className="text-red-500 mb-2">⚠️ {error}</div>
+              <button 
+                onClick={fetchUsers}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+              >
+                ลองใหม่อีกครั้ง
+              </button>
             </div>
           ) : users.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
