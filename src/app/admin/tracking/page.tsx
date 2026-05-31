@@ -44,8 +44,11 @@ export default function TrackingPage() {
   const supabase = createClient()
   const router = useRouter()
   
+  // State สำหรับเก็บข้อมูลงาน
   const [allTrips, setAllTrips] = useState<TripBlock[]>([])
   const [loading, setLoading] = useState(true)
+  
+  // State อื่นๆ
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [showCalendar, setShowCalendar] = useState(false)
@@ -56,9 +59,35 @@ export default function TrackingPage() {
   const [dragOverItem, setDragOverItem] = useState<number | null>(null)
   const [hideCancelled, setHideCancelled] = useState(false)
 
-  useEffect(() => { 
-    fetchAllTrips() 
+  // ✅ 1. โหลดข้อมูลเมื่อเปิดหน้า (ตรวจสอบ SessionStorage ก่อน เพื่อป้องกันงานหาย)
+  useEffect(() => {
+    const init = async () => {
+      const tempTrips = sessionStorage.getItem('temp-trips')
+      
+      // ถ้ามีข้อมูลค้างไว้ (Draft) ให้โหลดมาใช้เลย ไม่ไปดึงจาก DB
+      if (tempTrips) {
+        try {
+          setAllTrips(JSON.parse(tempTrips))
+          setLoading(false)
+          setViewMode('detail')
+          return
+        } catch (e) {
+          console.error('Error parsing temp trips', e)
+        }
+      }
+
+      // ถ้าไม่มี Draft ค่อยไปดึงจาก Database
+      await fetchAllTrips()
+    }
+    init()
   }, [])
+
+  // ✅ 2. บันทึกข้อมูลลง SessionStorage ทุกครั้งที่มีการแก้ไข (ป้องกันงานหาย)
+  useEffect(() => {
+    if (allTrips.length > 0) {
+      sessionStorage.setItem('temp-trips', JSON.stringify(allTrips))
+    }
+  }, [allTrips])
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -69,13 +98,33 @@ export default function TrackingPage() {
   const fetchAllTrips = async () => {
     setLoading(true)
     try {
+      // ✅ ตรวจสอบสิทธิ์ก่อนดึงข้อมูล
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        console.error('Auth Error:', userError)
+        // ถ้า Token หมดอายุ ให้เด้งไป Login
+        await supabase.auth.signOut()
+        router.push('/login')
+        return
+      }
+
       const { data, error } = await supabase
         .from('trip_logs')
         .select('*')
         .order('work_date', { ascending: false })
         .limit(200)
       
-      if (error) throw error
+      if (error) {
+        console.error('Supabase Fetch Error:', error)
+        // จัดการ Error 403/401
+        if (error.message.includes('403') || error.message.includes('401')) {
+           alert('เกิดข้อผิดพลาดสิทธิ์การเข้าถึง กรุณา Login ใหม่อีกครั้ง')
+           await supabase.auth.signOut()
+           router.push('/login')
+        }
+        throw error
+      }
       
       const mapped: TripBlock[] = (data || []).map((t: any) => ({
         id: t.id,
@@ -97,6 +146,8 @@ export default function TrackingPage() {
       }))
       
       setAllTrips(mapped)
+      // ล้าง SessionStorage เพราะข้อมูลตรงกับ DB แล้ว
+      sessionStorage.removeItem('temp-trips')
     } catch (err) { 
       console.error('Error fetching trips:', err) 
     } finally { 
@@ -127,6 +178,7 @@ export default function TrackingPage() {
     try {
       await supabase.from('trip_logs').delete().eq('work_date', date)
       fetchAllTrips()
+      sessionStorage.removeItem('temp-trips') // ล้าง Cache
     } catch (err) {
       console.error('Error deleting date:', err)
       alert('ไม่สามารถลบได้')
@@ -140,6 +192,7 @@ export default function TrackingPage() {
       return
     }
 
+    // ✅ เพิ่มงานใหม่ และ State จะถูกบันทึกอัตโนมัติโดย useEffect
     setAllTrips(prev => [...prev, {
       id: `temp-${Date.now()}`,
       workDate: selectedDate,
@@ -355,6 +408,7 @@ export default function TrackingPage() {
         await supabase.from('trip_logs').delete().eq('id', trip.id)
       }
       
+      // ลบออกจาก State (ซึ่งจะลบออกจาก SessionStorage อัตโนมัติ)
       setAllTrips(prev => prev.filter((_, i) => i !== index))
     } catch (err) {
       console.error('Error deleting block:', err)
@@ -364,6 +418,15 @@ export default function TrackingPage() {
 
   const saveBlock = async (index: number) => {
     const trip = allTrips[index]
+    
+    // ✅ ตรวจสอบ Session ก่อนบันทึก
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      alert('Session หมดอายุ กรุณา Login ใหม่')
+      router.push('/login')
+      return
+    }
+
     const payload = { 
       work_date: trip.workDate,
       group_name: trip.groupName,
@@ -377,14 +440,14 @@ export default function TrackingPage() {
       distance_km: parseFloat(trip.distanceKm) || null,
       eta_hours: parseFloat(trip.eta) || null,
       arrival_time: trip.arrivalTime,
-      updated_at: trip.updatedAt,
+      updated_at: new Date().toISOString(),
       status_color: trip.statusColor,
       sort_order: index
     }
     
-    let error, savedId = trip.id
-    
     try {
+      let error, savedId = trip.id
+      
       if (trip.isNew) {
         const res = await supabase.from('trip_logs').insert([payload]).select()
         error = res.error
@@ -397,10 +460,18 @@ export default function TrackingPage() {
       }
       
       if (error) {
-        alert('บันทึกไม่สำเร็จ: ' + error.message)
+        console.error('Save error:', error)
+        if (error.message.includes('403') || error.message.includes('401')) {
+           alert('เกิดข้อผิดพลาดสิทธิ์การเข้าถึง กรุณา Login ใหม่อีกครั้ง')
+           await supabase.auth.signOut()
+           router.push('/login')
+        } else {
+           alert('บันทึกไม่สำเร็จ: ' + error.message)
+        }
         return
       }
       
+      // อัปเดต State ให้ isNew = false และมี ID จริง
       setAllTrips(prev => {
         const newArr = [...prev]
         newArr[index].isNew = false
@@ -410,7 +481,10 @@ export default function TrackingPage() {
         return newArr
       })
       
+      // ✅ สำเร็จแล้ว ล้าง Cache ใน SessionStorage เพื่อไม่ให้โหลดซ้ำ
+      sessionStorage.removeItem('temp-trips')
       alert('บันทึกสำเร็จ')
+      
     } catch (err) {
       console.error('Error saving block:', err)
       alert('เกิดข้อผิดพลาดในการบันทึก')
@@ -466,6 +540,7 @@ export default function TrackingPage() {
     )
   }
 
+  // --- Render List View (หน้าเลือกวันที่) ---
   if (viewMode === 'list') {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -535,6 +610,7 @@ export default function TrackingPage() {
     )
   }
 
+  // --- Render Detail View (หน้าตารางงาน) ---
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <Navigation />
@@ -583,7 +659,7 @@ export default function TrackingPage() {
                     {!isStandalone && (
                       <div className="bg-blue-100/50 px-4 py-2 flex justify-between items-center border-b border-blue-200">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-blue-800">📦 กลุ่ม: {groupName}</span>
+                          <span className="text-sm font-bold text-blue-800"> กลุ่ม: {groupName}</span>
                           <span className="text-[10px] bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">
                             {group.indices.length} คัน
                           </span>
@@ -790,7 +866,7 @@ export default function TrackingPage() {
                                   trip.statusColor === 'postponed' ? 'bg-orange-100 border-orange-300 text-orange-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
                                 }`}
                               >
-                                ⏳ เลื่อนงาน
+                                 เลื่อนงาน
                               </button>
                               <button 
                                 onClick={() => setStatus(idx, 'cancelled')} 
