@@ -55,33 +55,23 @@ export default function TrackingPage() {
   const [dragOverItem, setDragOverItem] = useState<number | null>(null)
   const [hideCancelled, setHideCancelled] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
+  const [lastFetchTime, setLastFetchTime] = useState<number>(0)
 
-  // ✅ ฟังก์ชันคัดลอกข้อความ (เพิ่มเข้ามา)
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopiedText(text)
     setTimeout(() => setCopiedText(null), 2000)
   }
 
-  useEffect(() => {
-    fetchAllTrips()
+  // ✅ โหลดข้อมูลจาก Database (เรียกแค่ครั้งเดียวตอนเปิดหน้า)
+  const fetchAllTrips = useCallback(async (forceRefresh = false) => {
+    const now = Date.now()
     
-    const channel = supabase
-      .channel('trip_logs_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'trip_logs' },
-        () => {
-          fetchAllTrips()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
+    // ✅ ป้องกันการ fetch บ่อยเกินไป (debounce 2 วินาที)
+    if (!forceRefresh && now - lastFetchTime < 2000) {
+      return
     }
-  }, [])
-
-  const fetchAllTrips = async () => {
+    
     setLoading(true)
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -97,7 +87,10 @@ export default function TrackingPage() {
         .order('work_date', { ascending: false })
         .limit(500)
       
-      if (error) throw error
+      if (error) {
+        console.error('Fetch error:', error)
+        throw error
+      }
       
       const mapped: TripBlock[] = (data || []).map((t: any) => ({
         id: t.id,
@@ -119,12 +112,36 @@ export default function TrackingPage() {
       }))
       
       setAllTrips(mapped)
+      setLastFetchTime(now)
     } catch (err) { 
       console.error('Error fetching trips:', err)
     } finally { 
       setLoading(false) 
     }
-  }
+  }, [lastFetchTime, router, supabase.auth])
+
+  // ✅ ตั้งค่า Real-time subscription (เรียกครั้งเดียว)
+  useEffect(() => {
+    fetchAllTrips(true) // Force refresh ครั้งแรก
+    
+    const channel = supabase
+      .channel('trip_logs_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'trip_logs' },
+        (payload) => {
+          console.log('Real-time change:', payload)
+          // ✅ Debounce: รอ 500ms ก่อน refresh
+          setTimeout(() => {
+            fetchAllTrips(true)
+          }, 500)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, []) // ✅ Empty dependency array = เรียกครั้งเดียวตอน mount
 
   const uniqueDates = useMemo(() => {
     const dates = new Map<string, number>()
@@ -146,7 +163,7 @@ export default function TrackingPage() {
     if (!confirm(`ลบงานวันที่ ${date}?`)) return
     try {
       await supabase.from('trip_logs').delete().eq('work_date', date)
-      fetchAllTrips()
+      await fetchAllTrips(true)
     } catch (err) {
       console.error('Error deleting date:', err)
       alert('ไม่สามารถลบได้')
@@ -379,6 +396,7 @@ export default function TrackingPage() {
         await supabase.from('trip_logs').delete().eq('id', trip.id)
       }
       setAllTrips(prev => prev.filter((_, i) => i !== index))
+      await fetchAllTrips(true)
     } catch (err) {
       console.error('Error deleting block:', err)
       alert('ไม่สามารถลบได้')
@@ -432,14 +450,22 @@ export default function TrackingPage() {
         return
       }
       
+      // ✅ อัปเดต state ทันที (ไม่ต้องรอ fetch ใหม่)
       setAllTrips(prev => {
         const newArr = [...prev]
-        newArr[index].isNew = false
-        if (savedId && !newArr[index].id) newArr[index].id = savedId
+        newArr[index] = {
+          ...newArr[index],
+          id: savedId || newArr[index].id,
+          isNew: false
+        }
         return newArr
       })
       
-      await fetchAllTrips()
+      // ✅ รอ 1 วินาทีแล้วค่อย refresh (prevent race condition)
+      setTimeout(async () => {
+        await fetchAllTrips(true)
+      }, 1000)
+      
       alert('บันทึกสำเร็จ')
       
     } catch (err) {
