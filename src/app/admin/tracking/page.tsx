@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import Navigation from '@/components/Navigation'
-import Link from 'next/link'
 
 interface TripBlock {
   id?: string
@@ -44,11 +43,8 @@ export default function TrackingPage() {
   const supabase = createClient()
   const router = useRouter()
   
-  // State สำหรับเก็บข้อมูลงาน
   const [allTrips, setAllTrips] = useState<TripBlock[]>([])
   const [loading, setLoading] = useState(true)
-  
-  // State อื่นๆ
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [showCalendar, setShowCalendar] = useState(false)
@@ -59,12 +55,12 @@ export default function TrackingPage() {
   const [dragOverItem, setDragOverItem] = useState<number | null>(null)
   const [hideCancelled, setHideCancelled] = useState(false)
 
-  // ✅ 1. โหลดข้อมูลเมื่อเปิดหน้า (ตรวจสอบ SessionStorage ก่อน เพื่อป้องกันงานหาย)
+  // ✅ 1. โหลดข้อมูลเมื่อเปิดหน้า (ตรวจสอบ SessionStorage เพื่อป้องกันงานหาย)
   useEffect(() => {
     const init = async () => {
+      // ลองโหลดจาก SessionStorage ก่อน (ข้อมูลค้างในเครื่อง)
       const tempTrips = sessionStorage.getItem('temp-trips')
       
-      // ถ้ามีข้อมูลค้างไว้ (Draft) ให้โหลดมาใช้เลย ไม่ไปดึงจาก DB
       if (tempTrips) {
         try {
           setAllTrips(JSON.parse(tempTrips))
@@ -76,7 +72,7 @@ export default function TrackingPage() {
         }
       }
 
-      // ถ้าไม่มี Draft ค่อยไปดึงจาก Database
+      // ถ้าไม่มีข้อมูลค้าง ค่อยไปดึงจาก Database
       await fetchAllTrips()
     }
     init()
@@ -98,12 +94,11 @@ export default function TrackingPage() {
   const fetchAllTrips = async () => {
     setLoading(true)
     try {
-      // ✅ ตรวจสอบสิทธิ์ก่อนดึงข้อมูล
+      // ✅ ตรวจสอบสิทธิ์ก่อนดึงข้อมูล (แก้ปัญหา Error 403/401)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
         console.error('Auth Error:', userError)
-        // ถ้า Token หมดอายุ ให้เด้งไป Login
         await supabase.auth.signOut()
         router.push('/login')
         return
@@ -117,9 +112,8 @@ export default function TrackingPage() {
       
       if (error) {
         console.error('Supabase Fetch Error:', error)
-        // จัดการ Error 403/401
         if (error.message.includes('403') || error.message.includes('401')) {
-           alert('เกิดข้อผิดพลาดสิทธิ์การเข้าถึง กรุณา Login ใหม่อีกครั้ง')
+           alert('Session หมดอายุ กรุณา Login ใหม่อีกครั้ง')
            await supabase.auth.signOut()
            router.push('/login')
         }
@@ -178,7 +172,7 @@ export default function TrackingPage() {
     try {
       await supabase.from('trip_logs').delete().eq('work_date', date)
       fetchAllTrips()
-      sessionStorage.removeItem('temp-trips') // ล้าง Cache
+      sessionStorage.removeItem('temp-trips')
     } catch (err) {
       console.error('Error deleting date:', err)
       alert('ไม่สามารถลบได้')
@@ -192,7 +186,6 @@ export default function TrackingPage() {
       return
     }
 
-    // ✅ เพิ่มงานใหม่ และ State จะถูกบันทึกอัตโนมัติโดย useEffect
     setAllTrips(prev => [...prev, {
       id: `temp-${Date.now()}`,
       workDate: selectedDate,
@@ -408,7 +401,6 @@ export default function TrackingPage() {
         await supabase.from('trip_logs').delete().eq('id', trip.id)
       }
       
-      // ลบออกจาก State (ซึ่งจะลบออกจาก SessionStorage อัตโนมัติ)
       setAllTrips(prev => prev.filter((_, i) => i !== index))
     } catch (err) {
       console.error('Error deleting block:', err)
@@ -471,7 +463,6 @@ export default function TrackingPage() {
         return
       }
       
-      // อัปเดต State ให้ isNew = false และมี ID จริง
       setAllTrips(prev => {
         const newArr = [...prev]
         newArr[index].isNew = false
@@ -481,7 +472,6 @@ export default function TrackingPage() {
         return newArr
       })
       
-      // ✅ สำเร็จแล้ว ล้าง Cache ใน SessionStorage เพื่อไม่ให้โหลดซ้ำ
       sessionStorage.removeItem('temp-trips')
       alert('บันทึกสำเร็จ')
       
@@ -616,8 +606,42 @@ export default function TrackingPage() {
       <Navigation />
       {renderCalendar()}
       
+      {/* ✅ เพิ่ม Header ใหม่: ปุ่มกลับ, วันที่, และเปลี่ยนวันที่ */}
+      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-16 z-20">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => {
+                  setViewMode('list')
+                  setSelectedDate(new Date().toISOString().split('T')[0])
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+              >
+                ← กลับ
+              </button>
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <h2 className="text-xl font-bold text-gray-800">
+                  {selectedDate.split('-').reverse().join('/')}
+                </h2>
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => setShowCalendar(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              เปลี่ยนวันที่
+            </button>
+          </div>
+        </div>
+      </header>
+      
       <div className="flex flex-1">
-        <aside className="hidden lg:block w-64 p-4 sticky top-16 self-start">
+        <aside className="hidden lg:block w-64 p-4 sticky top-32 self-start">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">Text Snippets</h3>
             <div className="space-y-2">
@@ -628,7 +652,7 @@ export default function TrackingPage() {
                     onClick={() => copyToClipboard(snippet)} 
                     className="text-xs text-blue-500 hover:text-blue-700 font-medium flex items-center gap-1"
                   >
-                    📋 คัดลอก
+                     คัดลอก
                   </button>
                 </div>
               ))}
@@ -897,7 +921,7 @@ export default function TrackingPage() {
           </div>
         </main>
 
-        <aside className="hidden lg:block w-72 p-4 sticky top-16 self-start">
+        <aside className="hidden lg:block w-72 p-4 sticky top-32 self-start">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">Location Presets</h3>
             <div className="space-y-3">
