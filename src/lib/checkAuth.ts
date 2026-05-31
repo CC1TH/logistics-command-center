@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabaseClient'
 
 // กำหนด Email ของ Admin (แก้ไขตาม email จริงของคุณ)
-export const ADMIN_EMAILS = ['admin@cc1etlth.co.th']
+export const ADMIN_EMAILS = [
+    'admin@cc1etlth.co.th',
+    'adminccth@cc1etlth.co.th',]
 
 export interface UserAuthResult {
   user: any
