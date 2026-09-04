@@ -42,11 +42,16 @@ export default function ManualEmailPage() {
 
   const loadJobs = async () => {
     setLoading(true);
-    const { data } = await supabase
+    
+    const { data, error } = await supabase
       .from("daily_jobs")
       .select("*")
       .eq("job_date", currentDate)
-      .order("created_at", { ascending: true, nullsFirst: true }); // ✅ แก้ไขตรงนี้
+      .order("created_at", { ascending: true, nullsFirst: true });
+
+    if (error) {
+      console.error("Error loading jobs:", error);
+    }
 
     if (data) {
       setJobs(
@@ -85,11 +90,9 @@ export default function ManualEmailPage() {
       job_date: currentDate,
     };
 
-    // ✅ เพิ่มที่ท้ายรายการ (ล่างสุด)
     setJobs((prev) => {
       const newJobs = [...prev, newJob];
       
-      // เลื่อนหน้าจอลงล่างสุด
       setTimeout(() => {
         bottomRef.current?.scrollIntoView({ 
           behavior: "smooth",
@@ -169,7 +172,7 @@ export default function ManualEmailPage() {
             ← กลับ
           </button>
           <div className="flex items-center gap-2 text-lg font-semibold">
-             {new Date(currentDate).toLocaleDateString("th-TH")}
+            📅 {new Date(currentDate).toLocaleDateString("th-TH")}
           </div>
           <button
             onClick={() => setCurrentDate(new Date().toISOString().split("T")[0])}
