@@ -43,6 +43,8 @@ export default function ManualEmailPage() {
   const loadJobs = async () => {
     setLoading(true);
     
+    console.log("🔄 Loading jobs for date:", currentDate);
+    
     const { data, error } = await supabase
       .from("daily_jobs")
       .select("*")
@@ -50,10 +52,14 @@ export default function ManualEmailPage() {
       .order("created_at", { ascending: true, nullsFirst: true });
 
     if (error) {
-      console.error("Error loading jobs:", error);
+      console.error("❌ Error loading jobs:", error);
     }
 
     if (data) {
+      console.log("✅ Loaded jobs:", data.length);
+      console.log("📊 First job created_at:", data[0]?.created_at);
+      console.log("📊 Last job created_at:", data[data.length - 1]?.created_at);
+      
       setJobs(
         data.map((job) => ({
           id: job.id,
@@ -90,10 +96,15 @@ export default function ManualEmailPage() {
       job_date: currentDate,
     };
 
+    console.log("➕ Adding new job, current jobs count:", jobs.length);
+    
     setJobs((prev) => {
       const newJobs = [...prev, newJob];
+      console.log("✅ New jobs count:", newJobs.length);
+      console.log("📍 New job should be at index:", newJobs.length - 1);
       
       setTimeout(() => {
+        console.log("🔍 Scrolling to bottom...");
         bottomRef.current?.scrollIntoView({ 
           behavior: "smooth",
           block: "end"
@@ -151,7 +162,7 @@ export default function ManualEmailPage() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">📧 Manual E-Mail</h1>
+          <h1 className="text-2xl font-bold text-gray-800"> Manual E-Mail</h1>
           <button
             onClick={() => router.push("/dashboard")}
             className="text-red-600 hover:underline"
