@@ -30,15 +30,6 @@ export default function ManualEmailPage() {
     loadJobs();
   }, [currentDate]);
 
-  // เลื่อนไปล่างสุดเมื่อมีรายการใหม่
-  useEffect(() => {
-    if (jobs.length > 0) {
-      setTimeout(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
-    }
-  }, [jobs.length]);
-
   const checkAuth = async () => {
     const cookies = document.cookie.split("; ");
     const roleCookie = cookies.find((row) => row.startsWith("role="));
@@ -55,7 +46,7 @@ export default function ManualEmailPage() {
       .from("daily_jobs")
       .select("*")
       .eq("job_date", currentDate)
-      .order("created_at", { ascending: true }); // เรียงจากเก่าไปใหม่
+      .order("created_at", { ascending: true, nullsFirst: true }); // ✅ แก้ไขตรงนี้
 
     if (data) {
       setJobs(
@@ -78,7 +69,6 @@ export default function ManualEmailPage() {
     setLoading(false);
   };
 
-  // ✅ ฟังก์ชันเพิ่มรายการใหม่ - เพิ่มที่ล่างสุด
   const handleAddJob = () => {
     const newJob: Job = {
       id: crypto.randomUUID(),
@@ -95,8 +85,20 @@ export default function ManualEmailPage() {
       job_date: currentDate,
     };
 
-    //  สำคัญ: ใช้ [...prev, newJob] เพื่อเพิ่มที่ล่างสุด
-    setJobs((prev) => [...prev, newJob]);
+    // ✅ เพิ่มที่ท้ายรายการ (ล่างสุด)
+    setJobs((prev) => {
+      const newJobs = [...prev, newJob];
+      
+      // เลื่อนหน้าจอลงล่างสุด
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ 
+          behavior: "smooth",
+          block: "end"
+        });
+      }, 100);
+      
+      return newJobs;
+    });
   };
 
   const handleSave = async (job: Job) => {
@@ -116,10 +118,8 @@ export default function ManualEmailPage() {
     };
 
     if (job.id && !job.id.includes("-")) {
-      // อัปเดตข้อมูลเดิม
       await supabase.from("daily_jobs").update(jobData).eq("id", job.id);
     } else {
-      // เพิ่มข้อมูลใหม่
       const { data } = await supabase.from("daily_jobs").insert([jobData]).select();
       if (data && data[0]) {
         setJobs((prev) =>
@@ -147,7 +147,6 @@ export default function ManualEmailPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">📧 Manual E-Mail</h1>
           <button
@@ -158,7 +157,6 @@ export default function ManualEmailPage() {
           </button>
         </div>
 
-        {/* Date Selector */}
         <div className="bg-white p-4 rounded-lg shadow mb-6 flex items-center gap-4">
           <button
             onClick={() => {
@@ -171,7 +169,7 @@ export default function ManualEmailPage() {
             ← กลับ
           </button>
           <div className="flex items-center gap-2 text-lg font-semibold">
-            📅 {new Date(currentDate).toLocaleDateString("th-TH")}
+             {new Date(currentDate).toLocaleDateString("th-TH")}
           </div>
           <button
             onClick={() => setCurrentDate(new Date().toISOString().split("T")[0])}
@@ -181,7 +179,6 @@ export default function ManualEmailPage() {
           </button>
         </div>
 
-        {/* Add Button */}
         <button
           onClick={handleAddJob}
           className="mb-4 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
@@ -189,13 +186,19 @@ export default function ManualEmailPage() {
           + เพิ่มรายการ
         </button>
 
-        {/* Jobs List */}
         {loading ? (
           <div className="text-center py-8 text-gray-500">กำลังโหลด...</div>
         ) : (
           <div className="space-y-4">
-            {jobs.map((job) => (
-              <div key={job.id} className="bg-white p-6 rounded-lg shadow-md">
+            {jobs.map((job, index) => (
+              <div 
+                key={job.id} 
+                className={`bg-white p-6 rounded-lg shadow-md transition-all ${
+                  index === jobs.length - 1 && job.id.includes('-') 
+                    ? 'ring-2 ring-green-500 bg-green-50' 
+                    : ''
+                }`}
+              >
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -358,7 +361,7 @@ export default function ManualEmailPage() {
                     onClick={() => handleDelete(job.id)}
                     className="px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm"
                   >
-                     ยกเลิก
+                    ✕ ยกเลิก
                   </button>
                   <button
                     onClick={() => handleSave(job)}
@@ -370,7 +373,6 @@ export default function ManualEmailPage() {
               </div>
             ))}
 
-            {/* Reference point for auto-scroll */}
             <div ref={bottomRef} />
 
             {jobs.length === 0 && (
